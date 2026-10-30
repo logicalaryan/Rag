@@ -1,0 +1,26 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+
+# Environments & Keys
+.env
+*.env
+.venv
+env/
+venv/
+
+# Database & Storage
+data/
+chroma_db/
+postgres_data/
+redis_data/
+*.db
+*.sqlite3
+
+# Frontend build outputs (when building inside repo)
+frontend/dist/
+frontend/node_modules/
