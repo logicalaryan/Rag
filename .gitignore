@@ -24,3 +24,7 @@ redis_data/
 # Frontend build outputs (when building inside repo)
 frontend/dist/
 frontend/node_modules/
+
+# Local benchmarks & evaluations
+evals.py
+
