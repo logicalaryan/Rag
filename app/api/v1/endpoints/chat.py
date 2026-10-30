@@ -6,7 +6,7 @@ from app.core.agents.orchestrator import orchestrator
 router = APIRouter()
 
 
-@router.post("/chat")
+@router.post("")
 async def chat_stream(request: ChatRequest):
     """SSE Streaming Chat Endpoint using native FastAPI StreamingResponse."""
     return StreamingResponse(

@@ -46,26 +46,23 @@ User Query:
 """
 
         try:
-            # Generate streaming content
-            response_stream = self.client.models.generate_content_stream(
+            stream = await self.client.aio.models.generate_content_stream(
                 model=settings.PRIMARY_MODEL,
                 contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.2,
-                ),
+                config=types.GenerateContentConfig(temperature=0.2),
             )
-            for chunk in response_stream:
+            async for chunk in stream:
                 if chunk.text:
                     yield chunk.text
-        except Exception as e:
+        except Exception:
             # Fallback to secondary model if primary encounters rate limit
             try:
-                response_stream = self.client.models.generate_content_stream(
+                stream = await self.client.aio.models.generate_content_stream(
                     model=settings.FALLBACK_MODEL,
                     contents=prompt,
                     config=types.GenerateContentConfig(temperature=0.2),
                 )
-                for chunk in response_stream:
+                async for chunk in stream:
                     if chunk.text:
                         yield chunk.text
             except Exception as fallback_err:

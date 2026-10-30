@@ -1,4 +1,5 @@
 import json
+import logging
 from typing import List
 from google import genai
 from google.genai import types
@@ -55,7 +56,7 @@ Draft Answer:
 {draft_answer}
 """
         try:
-            response = self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=settings.PRIMARY_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -72,9 +73,10 @@ Draft Answer:
                 detected_hallucinations=data.get("detected_hallucinations", []),
             )
         except Exception:
+            logging.exception("critic failed, passing draft unverified")
             return CriticEvaluation(
                 passed=True,
                 faithfulness_score=1.0,
                 relevance_score=1.0,
-                feedback="Critic bypass on parsing error",
+                feedback="Critic bypass on error",
             )

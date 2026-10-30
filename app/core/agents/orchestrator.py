@@ -65,13 +65,19 @@ class RAGOrchestrator:
             if label not in citations:
                 citations.append(label)
 
-        # 4. Stream Synthesis
-        yield f"data: {json.dumps({'type': 'thinking', 'content': 'Synthesizing verified response...'})}\n\n"
+        # 4. Draft -> Critic loop (buffered: tokens can't be unsent once streamed)
+        feedback, draft, approved = "", "", False
+        for attempt in range(settings.MAX_CRITIC_RETRIES + 1):
+            yield f"data: {json.dumps({'type': 'thinking', 'content': 'Synthesizing and verifying response...'})}\n\n"
+            draft = "".join([t async for t in self.synthesizer.stream_generate(query, context_chunks, feedback)])
+            verdict = await self.critic.evaluate(query, context_chunks, draft)
+            if verdict.passed:
+                approved = True
+                break
+            feedback = verdict.feedback or ""
 
-        full_draft = ""
-        async for token in self.synthesizer.stream_generate(query, context_chunks):
-            full_draft += token
-            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+        text = draft if approved else "I could not verify a grounded answer from the available sources."
+        yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
 
         # 5. Emit Citations and Completion
         if citations:

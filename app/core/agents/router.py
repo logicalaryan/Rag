@@ -1,4 +1,5 @@
 import json
+import logging
 from google import genai
 from google.genai import types
 from app.config import settings
@@ -39,7 +40,7 @@ User Query:
 {query}
 """
         try:
-            response = self.client.models.generate_content(
+            response = await self.client.aio.models.generate_content(
                 model=settings.PRIMARY_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
@@ -54,6 +55,7 @@ User Query:
                 reasoning=data.get("reasoning", "Standard routing"),
             )
         except Exception:
+            logging.exception("router failed, defaulting to search_local")
             return RoutingDecision(
                 intent="search_local",
                 rewritten_query=query,
