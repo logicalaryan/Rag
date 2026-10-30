@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import List
 from app.db.models import RetrievedChunk
 
@@ -38,8 +39,8 @@ class WebSearchTool:
                             metadata={"url": url, "title": r.get("title")},
                         )
                     )
-        except Exception as e:
-            pass
+        except Exception:
+            logging.exception("web search failed")
         return results
 
 

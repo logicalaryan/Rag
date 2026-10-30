@@ -23,8 +23,8 @@ app = FastAPI(
 # Enable CORS for Cloudflare Pages and local Vite development
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Production safe default: allow all or configure via settings.CORS_ORIGINS
-    allow_credentials=True,
+    allow_origins=settings.CORS_ORIGINS,
+    allow_origin_regex=r"https://.*\.pages\.dev",
     allow_methods=["*"],
     allow_headers=["*"],
 )

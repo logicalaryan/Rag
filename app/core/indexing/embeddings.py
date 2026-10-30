@@ -44,31 +44,22 @@ class EmbeddingClient:
 
         all_embeddings = []
         for i in range(0, len(documents), batch_size):
-            batch = documents[i : i + batch_size]
-            for doc in batch:
+            for attempt in (0, 1):
                 try:
                     res = self.client.models.embed_content(
                         model=self.model_name,
-                        contents=doc,
+                        contents=documents[i : i + batch_size],
                         config=types.EmbedContentConfig(
                             task_type="RETRIEVAL_DOCUMENT",
                             output_dimensionality=self.output_dim,
                         ),
                     )
-                    all_embeddings.append(res.embeddings[0].values)
-                except Exception as e:
+                    break
+                except Exception:
+                    if attempt:
+                        raise
                     time.sleep(1.0)
-                    # Retry once on error
-                    res = self.client.models.embed_content(
-                        model=self.model_name,
-                        contents=doc,
-                        config=types.EmbedContentConfig(
-                            task_type="RETRIEVAL_DOCUMENT",
-                            output_dimensionality=self.output_dim,
-                        ),
-                    )
-                    all_embeddings.append(res.embeddings[0].values)
-            time.sleep(0.1)  # Gentle spacing
+            all_embeddings.extend(e.values for e in res.embeddings)
         return all_embeddings
 
 

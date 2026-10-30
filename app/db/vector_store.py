@@ -97,7 +97,9 @@ class VectorStoreAdapter:
                 })
         return chunks
 
-    def count(self) -> int:
+    def count(self, source: Optional[str] = None) -> int:
+        if source:
+            return len(self.collection.get(where={"source": source}, include=[])["ids"])
         return self.collection.count()
 
 

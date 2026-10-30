@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from typing import List, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 from app.config import settings
@@ -37,7 +38,8 @@ class LocalRetrieverTool:
         try:
             query_emb = embedding_client.embed_query(query)
             dense_results = vector_store.query_similarity(query_emb, top_k=settings.TOP_K_CANDIDATES, filter_metadata=filter_metadata)
-        except Exception as e:
+        except Exception:
+            logging.exception("dense search failed, using BM25 only")
             dense_results = []
 
         # 2. Sparse BM25 Search
