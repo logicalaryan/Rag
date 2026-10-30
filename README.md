@@ -2,6 +2,18 @@
 
 Enterprise microservice architecture for autonomous Retrieval-Augmented Generation.
 
+## Tech Stack
+
+- **Language:** Python 3.11
+- **API:** FastAPI, Uvicorn, and Server-Sent Events with `sse-starlette`
+- **AI:** Google Gemini through the Google GenAI SDK
+- **Retrieval:** ChromaDB, BM25 with `rank-bm25`, and FlashRank
+- **Document processing:** `pypdf`, `pdfplumber`, BeautifulSoup, and `python-multipart`
+- **Data and messaging:** PostgreSQL with SQLAlchemy and asyncpg, Redis, and Celery
+- **Observability:** OpenTelemetry and Prometheus
+- **Testing:** pytest, pytest-asyncio, and HTTPX
+- **Deployment:** Docker and Docker Compose
+
 ## Architecture Structure
 
 ```
@@ -65,6 +77,47 @@ production/
 
 ## Quick Start (Docker)
 
+### 1. Clone the repository
+
 ```bash
-docker-compose up --build
+git clone https://github.com/logicalaryan/Rag.git
+cd Rag
 ```
+
+### 2. Configure the Gemini API key
+
+Create a `.env` file in the project root:
+
+```env
+GEMINI_API_KEY=your_gemini_api_key
+```
+
+### 3. Build and run the services
+
+```bash
+docker compose up --build
+```
+
+The API is available at `http://localhost:8000`.
+
+To stop the services:
+
+```bash
+docker compose down
+```
+
+## Run Locally
+
+Python 3.11 or later is recommended.
+
+```bash
+git clone https://github.com/logicalaryan/Rag.git
+cd Rag
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+export GEMINI_API_KEY=your_gemini_api_key
+uvicorn app.main:app --reload
+```
+
+The local API is available at `http://localhost:8000`.
