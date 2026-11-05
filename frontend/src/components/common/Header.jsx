@@ -8,14 +8,13 @@ export function Header() {
     <header className="header">
       <div className="header-left">
         <h2 className="header-title">{activeSession?.title || 'Agentic RAG'}</h2>
-        <span className="header-subtitle">/ production-v6</span>
+        <span className="header-subtitle">/ agentic-v5</span>
       </div>
       <div className="header-badges">
         <div className="badge">
-          {systemOnline ? 'API Connected' : 'Local Standby'}
+          {systemOnline ? 'API Connected' : 'Offline'}
         </div>
-        <div className="badge">Gemini Flash + Critic</div>
-        <div className="badge">TTFT &lt; 400ms</div>
+        <div className="badge">Router • Hybrid + Web • Critic</div>
       </div>
     </header>
   );

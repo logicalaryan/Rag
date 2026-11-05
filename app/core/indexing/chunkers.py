@@ -63,11 +63,14 @@ class StructureAwareChunker:
                             "page": page_num,
                         })
                         # Keep trailing overlap
-                        current_chunk = current_chunk[-self.overlap :] + "\n\n" + p
+                        current_chunk = current_chunk[-self.overlap :]
+                    if len(current_chunk) + len(p) + 2 <= self.chunk_size:
+                        current_chunk = f"{current_chunk}\n\n{p}" if current_chunk else p
                     else:
                         # Single huge paragraph: chunk by character slice
-                        for i in range(0, len(p), self.chunk_size - self.overlap):
-                            slice_text = p[i : i + self.chunk_size]
+                        text_to_slice = f"{current_chunk}\n\n{p}" if current_chunk else p
+                        for i in range(0, len(text_to_slice), self.chunk_size - self.overlap):
+                            slice_text = text_to_slice[i : i + self.chunk_size]
                             chunk_idx += 1
                             chunks.append({
                                 "chunk_id": f"{filename}_p{page_num}_c{chunk_idx}",

@@ -17,6 +17,13 @@ class CriticAgent:
         self.client = client
 
     async def evaluate(self, query: str, context_chunks: List[RetrievedChunk], draft_answer: str) -> CriticEvaluation:
+        if not draft_answer.strip():
+            return CriticEvaluation(
+                passed=False,
+                faithfulness_score=0.0,
+                relevance_score=0.0,
+                feedback="Empty draft generated.",
+            )
         if not context_chunks:
             # If no context, check if the model appropriately refused or gave conversational greeting
             is_polite_refusal = any(phrase in draft_answer.lower() for phrase in ["not mentioned", "cannot find", "do not have", "hello", "hi "])
@@ -55,28 +62,30 @@ Question:
 Draft Answer:
 {draft_answer}
 """
-        try:
-            response = await self.client.aio.models.generate_content(
-                model=settings.PRIMARY_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    temperature=0.0,
-                    response_mime_type="application/json",
-                ),
-            )
-            data = json.loads(response.text)
-            return CriticEvaluation(
-                passed=bool(data.get("passed", True)),
-                faithfulness_score=float(data.get("faithfulness_score", 1.0)),
-                relevance_score=float(data.get("relevance_score", 1.0)),
-                feedback=data.get("feedback"),
-                detected_hallucinations=data.get("detected_hallucinations", []),
-            )
-        except Exception:
-            logging.exception("critic failed, passing draft unverified")
-            return CriticEvaluation(
-                passed=True,
-                faithfulness_score=1.0,
-                relevance_score=1.0,
-                feedback="Critic bypass on error",
-            )
+        for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):
+            try:
+                response = await self.client.aio.models.generate_content(
+                    model=model,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        temperature=0.0,
+                        response_mime_type="application/json",
+                    ),
+                )
+                data = json.loads(response.text)
+                return CriticEvaluation(
+                    passed=bool(data.get("passed", True)),
+                    faithfulness_score=float(data.get("faithfulness_score", 1.0)),
+                    relevance_score=float(data.get("relevance_score", 1.0)),
+                    feedback=data.get("feedback"),
+                    detected_hallucinations=data.get("detected_hallucinations", []),
+                )
+            except Exception:
+                if model == settings.FALLBACK_MODEL:
+                    logging.exception("critic failed, passing draft unverified")
+        return CriticEvaluation(
+            passed=True,
+            faithfulness_score=1.0,
+            relevance_score=1.0,
+            feedback="Critic bypass on error",
+        )

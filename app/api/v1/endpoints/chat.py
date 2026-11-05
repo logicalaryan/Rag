@@ -12,7 +12,8 @@ async def chat_stream(request: ChatRequest):
     return StreamingResponse(
         orchestrator.execute_stream(
             query=request.query,
-            session_id=request.session_id or "default_session"
+            session_id=request.session_id or "default_session",
+            chat_history=request.chat_history or "",
         ),
         media_type="text/event-stream"
     )

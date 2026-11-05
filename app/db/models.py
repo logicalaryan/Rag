@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 class ChatRequest(BaseModel):
     query: str = Field(..., min_length=1, description="User question or prompt")
     session_id: Optional[str] = Field(default="default_session", description="Session identifier")
+    chat_history: Optional[str] = Field(default="", description="Multi-turn session memory buffer")
 
 
 class HealthResponse(BaseModel):

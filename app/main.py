@@ -3,13 +3,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.v1.routers import api_router
+from app.core.tools.local_retriever import local_retriever
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup: Initialize directories & warm up vector store
+    local_retriever._ensure_bm25()
     yield
-    # Shutdown logic if needed
 
 
 app = FastAPI(

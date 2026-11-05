@@ -55,6 +55,12 @@ export function ChatProvider({ children }) {
   async function sendMessage(text) {
     if (!text.trim() || isGenerating) return;
 
+    const targetSessionId = activeSessionId;
+    const historyBuffer = (activeSession?.messages || [])
+      .slice(-6)
+      .map((m) => `${m.role === 'user' ? 'User' : 'Assistant'}: ${m.content}`)
+      .join('\n');
+
     const userMsgId = generateId();
     const assistantMsgId = generateId();
 
@@ -69,7 +75,7 @@ export function ChatProvider({ children }) {
       id: assistantMsgId,
       role: 'assistant',
       content: '',
-      thinking: 'Retrieving context & verifying with Critic...',
+      thinking: 'Router analyzing intent & rewriting query...',
       citations: [],
       timestamp: new Date(),
     };
@@ -77,7 +83,7 @@ export function ChatProvider({ children }) {
     // Update session title on first message
     setSessions((prev) =>
       prev.map((session) => {
-        if (session.id === activeSessionId) {
+        if (session.id === targetSessionId) {
           const isFirstMessage = session.messages.length === 0;
           return {
             ...session,
@@ -93,11 +99,12 @@ export function ChatProvider({ children }) {
 
     await streamChatResponse({
       query: text,
-      sessionId: activeSessionId,
+      sessionId: targetSessionId,
+      chatHistory: historyBuffer,
       onToken: (token) => {
         setSessions((prev) =>
           prev.map((session) => {
-            if (session.id === activeSessionId) {
+            if (session.id === targetSessionId) {
               const updatedMessages = session.messages.map((msg) => {
                 if (msg.id === assistantMsgId) {
                   return {
@@ -117,7 +124,7 @@ export function ChatProvider({ children }) {
       onThinking: (thinkingText) => {
         setSessions((prev) =>
           prev.map((session) => {
-            if (session.id === activeSessionId) {
+            if (session.id === targetSessionId) {
               const updated = session.messages.map((m) =>
                 m.id === assistantMsgId ? { ...m, thinking: thinkingText } : m
               );
@@ -130,7 +137,7 @@ export function ChatProvider({ children }) {
       onCitations: (sources) => {
         setSessions((prev) =>
           prev.map((session) => {
-            if (session.id === activeSessionId) {
+            if (session.id === targetSessionId) {
               const updated = session.messages.map((m) =>
                 m.id === assistantMsgId ? { ...m, citations: sources } : m
               );
@@ -144,7 +151,19 @@ export function ChatProvider({ children }) {
         setIsGenerating(false);
       },
       onError: (err) => {
-        console.error(err);
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.id === targetSessionId) {
+              const updated = session.messages.map((m) =>
+                m.id === assistantMsgId
+                  ? { ...m, content: `Error: ${err.message}`, thinking: null }
+                  : m
+              );
+              return { ...session, messages: updated };
+            }
+            return session;
+          })
+        );
         setIsGenerating(false);
       },
     });

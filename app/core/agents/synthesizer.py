@@ -21,23 +21,30 @@ class SynthesizerAgent:
         query: str,
         context_chunks: List[RetrievedChunk],
         critic_feedback: str = "",
+        chat_history: str = "",
+        direct_answer: bool = False,
     ) -> AsyncGenerator[str, None]:
-        context_block = self.format_context(context_chunks)
+        history_block = f"\nConversation History:\n{chat_history}\n" if chat_history else ""
 
-        feedback_instruction = (
-            f"\nIMPORTANT - Previous attempt failed verification: {critic_feedback}\nEnsure strictly supported facts."
-            if critic_feedback
-            else ""
-        )
-
-        prompt = f"""You are a professional enterprise RAG assistant.
+        if direct_answer and not context_chunks:
+            prompt = f"""You are a helpful, professional enterprise RAG assistant.{history_block}
+Respond politely and concisely to the user's message:
+{query}
+"""
+        else:
+            context_block = self.format_context(context_chunks)
+            feedback_instruction = (
+                f"\nIMPORTANT - Previous attempt failed verification: {critic_feedback}\nEnsure strictly supported facts."
+                if critic_feedback
+                else ""
+            )
+            prompt = f"""You are a professional enterprise RAG assistant.
 Answer the user's inquiry accurately and factually using ONLY the provided context sources below.
 
 Rules:
 1. Always ground your facts in the Context. If the information is not present, clearly state: "I do not have enough verified information in the provided knowledge base."
 2. Provide citations where relevant in the text using bracketed format [Source: filename | Page X].
-3. Maintain an objective, concise, and structured tone.{feedback_instruction}
-
+3. Maintain an objective, concise, and structured tone.{feedback_instruction}{history_block}
 Context Sources:
 {context_block}
 
@@ -45,25 +52,17 @@ User Query:
 {query}
 """
 
-        try:
-            stream = await self.client.aio.models.generate_content_stream(
-                model=settings.PRIMARY_MODEL,
-                contents=prompt,
-                config=types.GenerateContentConfig(temperature=0.2),
-            )
-            async for chunk in stream:
-                if chunk.text:
-                    yield chunk.text
-        except Exception:
-            # Fallback to secondary model if primary encounters rate limit
+        for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):
             try:
                 stream = await self.client.aio.models.generate_content_stream(
-                    model=settings.FALLBACK_MODEL,
+                    model=model,
                     contents=prompt,
                     config=types.GenerateContentConfig(temperature=0.2),
                 )
                 async for chunk in stream:
                     if chunk.text:
                         yield chunk.text
-            except Exception as fallback_err:
-                yield f"Error generating answer: {str(fallback_err)}"
+                return
+            except Exception:
+                if model == settings.FALLBACK_MODEL:
+                    raise

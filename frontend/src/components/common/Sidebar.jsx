@@ -22,7 +22,7 @@ export function Sidebar() {
             <div className="brand-title">Enterprise</div>
           </div>
         </div>
-        <span className="brand-badge">v6.0</span>
+        <span className="brand-badge">v5.0</span>
       </div>
 
       <div style={{ padding: '0 16px' }}>

@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import re
 from typing import List, Dict, Any, Optional
 from rank_bm25 import BM25Okapi
 from app.config import settings
@@ -25,13 +26,26 @@ class LocalRetrieverTool:
 
     def __init__(self):
         self.ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2") if FLASHRANK_AVAILABLE else None
+        self._bm25: Optional[BM25Okapi] = None
+        self._chunks: List[Dict[str, Any]] = []
+
+    def invalidate_cache(self) -> None:
+        self._bm25 = None
+        self._chunks = []
+
+    def _ensure_bm25(self) -> None:
+        if self._bm25 is None or len(self._chunks) != vector_store.count():
+            self._chunks = vector_store.get_all_chunks()
+            if self._chunks:
+                tokenized = [re.findall(r"\w+", c["content"].lower()) for c in self._chunks]
+                self._bm25 = BM25Okapi(tokenized)
 
     async def execute(self, query: str, top_k: int = 4, filter_metadata: Optional[Dict[str, Any]] = None) -> List[RetrievedChunk]:
         return await asyncio.to_thread(self._sync_retrieve, query, top_k, filter_metadata)
 
     def _sync_retrieve(self, query: str, top_k: int, filter_metadata: Optional[Dict[str, Any]]) -> List[RetrievedChunk]:
-        all_chunks = vector_store.get_all_chunks()
-        if not all_chunks:
+        self._ensure_bm25()
+        if not self._chunks:
             return []
 
         # 1. Dense Vector Search
@@ -43,26 +57,29 @@ class LocalRetrieverTool:
             dense_results = []
 
         # 2. Sparse BM25 Search
-        corpus_texts = [c["content"] for c in all_chunks]
-        tokenized_corpus = [doc.lower().split() for doc in corpus_texts]
-        bm25 = BM25Okapi(tokenized_corpus)
-        tokenized_query = query.lower().split()
-        bm25_scores = bm25.get_scores(tokenized_query)
-
-        bm25_ranked_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)[: settings.TOP_K_CANDIDATES]
         bm25_results = []
-        for rank, idx in enumerate(bm25_ranked_indices):
-            raw = all_chunks[idx]
-            bm25_results.append(
-                RetrievedChunk(
-                    id=raw["id"],
-                    content=raw["content"],
-                    score=float(bm25_scores[idx]),
-                    source=raw["metadata"].get("source", "unknown"),
-                    page=raw["metadata"].get("page"),
-                    metadata=raw["metadata"],
+        tokenized_query = re.findall(r"\w+", query.lower())
+        if self._bm25 and tokenized_query:
+            bm25_scores = self._bm25.get_scores(tokenized_query)
+            bm25_ranked_indices = sorted(range(len(bm25_scores)), key=lambda i: bm25_scores[i], reverse=True)
+            for idx in bm25_ranked_indices:
+                if bm25_scores[idx] <= 0:
+                    break
+                raw = self._chunks[idx]
+                if filter_metadata and any(raw["metadata"].get(k) != v for k, v in filter_metadata.items()):
+                    continue
+                bm25_results.append(
+                    RetrievedChunk(
+                        id=raw["id"],
+                        content=raw["content"],
+                        score=float(bm25_scores[idx]),
+                        source=raw["metadata"].get("source", "unknown"),
+                        page=raw["metadata"].get("page"),
+                        metadata=raw["metadata"],
+                    )
                 )
-            )
+                if len(bm25_results) >= settings.TOP_K_CANDIDATES:
+                    break
 
         # 3. Reciprocal Rank Fusion (RRF)
         rrf_scores: Dict[str, float] = {}

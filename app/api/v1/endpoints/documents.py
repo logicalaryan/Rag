@@ -8,6 +8,7 @@ from app.db.models import DocumentMetadata, DocumentUploadResponse
 from app.db.vector_store import vector_store
 from app.core.indexing.chunkers import DocumentParser, StructureAwareChunker
 from app.core.indexing.embeddings import embedding_client
+from app.core.tools.local_retriever import local_retriever
 
 router = APIRouter()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -61,12 +62,14 @@ def upload_document(file: UploadFile = File(...)):
             metas = [{"source": c["source"], "page": c["page"]} for c in chunks]
 
             embeddings = embedding_client.embed_documents(contents)
+            vector_store.delete_by_source(filename)
             vector_store.upsert_chunks(
                 chunk_ids=ids,
                 embeddings=embeddings,
                 documents=contents,
                 metadatas=metas,
             )
+            local_retriever.invalidate_cache()
 
         return DocumentUploadResponse(
             id=filename,

@@ -4,7 +4,7 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-export async function streamChatResponse({ query, sessionId, onToken, onThinking, onCitations, onDone, onError }) {
+export async function streamChatResponse({ query, sessionId, chatHistory = '', onToken, onThinking, onCitations, onDone, onError }) {
   try {
     const response = await fetch(`${API_BASE}/api/v1/chat`, {
       method: 'POST',
@@ -15,6 +15,7 @@ export async function streamChatResponse({ query, sessionId, onToken, onThinking
       body: JSON.stringify({
         query,
         session_id: sessionId,
+        chat_history: chatHistory,
       }),
     });
 
@@ -54,7 +55,6 @@ export async function streamChatResponse({ query, sessionId, onToken, onThinking
             onCitations(payload.sources);
           }
         } catch {
-          // Plain string fallback
           if (onToken) onToken(dataStr);
         }
       }
@@ -62,24 +62,6 @@ export async function streamChatResponse({ query, sessionId, onToken, onThinking
 
     if (onDone) onDone();
   } catch (err) {
-    console.warn('[SSE] Backend stream unreachable, using local fallback:', err.message);
-    // Graceful simulated typewriter stream for UI demonstration when backend is idle
-    await simulateStream({ query, onToken, onCitations, onDone });
+    if (onError) onError(err);
   }
-}
-
-async function simulateStream({ query, onToken, onCitations, onDone }) {
-  const simulatedAnswer = `I retrieved relevant context regarding "${query}". The system uses hybrid retrieval (Dense + BM25) with Cross-Encoder reranking. All response claims are verified through our self-reflection Critic agent before streaming.`;
-  const chunks = simulatedAnswer.split(' ');
-
-  for (const chunk of chunks) {
-    await new Promise((resolve) => setTimeout(resolve, 35));
-    if (onToken) onToken(chunk + ' ');
-  }
-
-  if (onCitations) {
-    onCitations(['enterprise_policies.pdf:p3', 'system_architecture.md:L45']);
-  }
-
-  if (onDone) onDone();
 }

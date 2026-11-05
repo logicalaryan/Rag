@@ -71,6 +71,8 @@ class VectorStoreAdapter:
                 # Chroma returns cosine distance (0 to 2, where 0 is identical)
                 distance = results["distances"][0][idx] if results.get("distances") else 0.0
                 score = max(0.0, 1.0 - distance)
+                if score < settings.SIMILARITY_THRESHOLD:
+                    continue
 
                 retrieved.append(
                     RetrievedChunk(
@@ -96,6 +98,9 @@ class VectorStoreAdapter:
                     "metadata": data["metadatas"][idx] if data.get("metadatas") else {},
                 })
         return chunks
+
+    def delete_by_source(self, source: str) -> None:
+        self.collection.delete(where={"source": source})
 
     def count(self, source: Optional[str] = None) -> int:
         if source:

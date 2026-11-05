@@ -21,14 +21,8 @@ class Settings(BaseSettings):
     MAX_CRITIC_RETRIES: int = 2
     
     # Storage & Persistence
-    DATABASE_URL: str = "postgresql+asyncpg://rag_user:rag_password@localhost:5432/rag_db"
-    REDIS_URL: str = "redis://localhost:6379/0"
     CHROMA_PERSIST_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "chroma")
     DOCUMENTS_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "documents")
-    
-    # Semantic Cache
-    SEMANTIC_CACHE_SIMILARITY_THRESHOLD: float = 0.95
-    SEMANTIC_CACHE_TTL_SECONDS: int = 86400  # 24 hours
     
     # Security & CORS
     CORS_ORIGINS: List[str] = [
