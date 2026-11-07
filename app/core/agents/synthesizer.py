@@ -1,3 +1,4 @@
+import re
 from typing import List, AsyncGenerator
 from google import genai
 from google.genai import types
@@ -13,6 +14,28 @@ class SynthesizerAgent:
     def __init__(self, client: genai.Client):
         self.client = client
 
+    def _redact_sensitive_text(self, text: str) -> str:
+        if not text:
+            return text
+
+        redacted = text
+        patterns = [
+            (r'(?i)\b(password|passwd|pwd|secret|api[_-]?key|token)\b\s*[:=]\s*\S+', r'\1=[REDACTED]'),
+            (r'(?i)\b(bearer)\s+[A-Za-z0-9\-._~+/]+=*', r'\1 [REDACTED]'),
+            (r'\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b', '[REDACTED_EMAIL]'),
+            (r'(?<!\d)(?:\+?\d[\d\-\s()]{7,}\d)', '[REDACTED_PHONE]'),
+            (r'\b[A-Za-z0-9_\-]{24,}\b', '[REDACTED_TOKEN]'),
+        ]
+        for pattern, repl in patterns:
+            redacted = re.sub(pattern, repl, redacted)
+        return redacted
+
+    def _sanitize_chunks(self, chunks: List[RetrievedChunk]) -> List[RetrievedChunk]:
+        for c in chunks:
+            c.content = self._redact_sensitive_text(c.content)
+            c.source = self._redact_sensitive_text(c.source)
+        return chunks
+
     def format_context(self, chunks: List[RetrievedChunk]) -> str:
         return "\n\n".join([f"[Source: {c.source} | Page: {c.page or 1}]:\n{c.content}" for c in chunks])
 
@@ -24,15 +47,18 @@ class SynthesizerAgent:
         chat_history: str = "",
         direct_answer: bool = False,
     ) -> AsyncGenerator[str, None]:
-        history_block = f"\nConversation History:\n{chat_history}\n" if chat_history else ""
+        safe_query = self._redact_sensitive_text(query)
+        safe_chat_history = self._redact_sensitive_text(chat_history)
+        safe_chunks = self._sanitize_chunks(context_chunks)
+        history_block = f"\nConversation History:\n{safe_chat_history}\n" if safe_chat_history else ""
 
-        if direct_answer and not context_chunks:
+        if direct_answer and not safe_chunks:
             prompt = f"""You are a helpful, professional enterprise RAG assistant.{history_block}
 Respond politely and concisely to the user's message:
-{query}
+{safe_query}
 """
         else:
-            context_block = self.format_context(context_chunks)
+            context_block = self.format_context(safe_chunks)
             feedback_instruction = (
                 f"\nIMPORTANT - Previous attempt failed verification: {critic_feedback}\nEnsure strictly supported facts."
                 if critic_feedback
@@ -49,7 +75,7 @@ Context Sources:
 {context_block}
 
 User Query:
-{query}
+{safe_query}
 """
 
         for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):
