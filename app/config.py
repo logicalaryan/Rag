@@ -9,8 +9,8 @@ class Settings(BaseSettings):
     
     # AI & Model configs
     GEMINI_API_KEY: str = ""
-    PRIMARY_MODEL: str = "gemini-2.5-flash"
-    FALLBACK_MODEL: str = "gemini-2.5-flash-lite"
+    PRIMARY_MODEL: str = "gemini-3.6-flash"
+    FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
     EMBEDDING_MODEL: str = "gemini-embedding-001"
     EMBEDDING_DIM: int = 768
     
