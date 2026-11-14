@@ -68,16 +68,23 @@ class RAGOrchestrator:
                     approved = True
                     break
 
-                # 2. Tool Execution (search_local_docs / search_web)
-                if routing.intent in ["search_local", "both"]:
+                # 2. Tool Execution (parallel when intent == 'both')
+                seen_ids = {c.id for c in context_chunks}
+                if routing.intent == "both":
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Searching local docs & web in parallel: \"{search_query}\"...'})}\n\n"
+                    local_chunks, web_chunks = await asyncio.gather(
+                        local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K),
+                        web_search_tool.execute(search_query, top_k=3),
+                    )
+                    context_chunks.extend(c for c in local_chunks + web_chunks if c.id not in seen_ids)
+                elif routing.intent == "search_local":
                     yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_local_docs (HNSW + BM25 + FlashRank): \"{search_query}\"...'})}\n\n"
                     local_chunks = await local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K)
-                    seen_ids = {c.id for c in context_chunks}
                     context_chunks.extend(c for c in local_chunks if c.id not in seen_ids)
 
-                if routing.intent in ["search_web", "both"] or (not context_chunks and routing.intent != "direct_answer"):
+                if routing.intent == "search_web" or (not context_chunks and routing.intent != "direct_answer"):
                     yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_web: \"{search_query}\"...'})}\n\n"
-                    web_chunks = await web_search_tool.execute(search_query, top_k=2)
+                    web_chunks = await web_search_tool.execute(search_query, top_k=3)
                     seen_ids = {c.id for c in context_chunks}
                     context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
 
@@ -113,7 +120,8 @@ class RAGOrchestrator:
             history_turns.extend([f"User: {query}", f"Assistant: {final_text}"])
 
         # 5. Emit Citations and Completion
-        if citations:
+        is_refusal = "do not have enough verified information" in draft.lower() or not approved
+        if citations and not is_refusal:
             yield f"data: {json.dumps({'type': 'citations', 'sources': citations})}\n\n"
 
         yield "data: [DONE]\n\n"

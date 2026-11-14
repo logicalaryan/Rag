@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     
     # AI & Model configs
     GEMINI_API_KEY: str = ""
-    PRIMARY_MODEL: str = "gemini-3.6-flash"
+    PRIMARY_MODEL: str = "gemini-3.5-flash-lite"
     FALLBACK_MODEL: str = "gemini-3.5-flash-lite"
     EMBEDDING_MODEL: str = "gemini-embedding-001"
     EMBEDDING_DIM: int = 768
@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     TOP_K_CANDIDATES: int = 15
     FINAL_TOP_K: int = 4
     SIMILARITY_THRESHOLD: float = 0.35
-    MAX_CRITIC_RETRIES: int = 2
+    MAX_CRITIC_RETRIES: int = 1
     
     # Storage & Persistence
     CHROMA_PERSIST_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "chroma")
