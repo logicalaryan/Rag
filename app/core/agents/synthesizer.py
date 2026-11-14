@@ -53,7 +53,11 @@ class SynthesizerAgent:
         history_block = f"\nConversation History:\n{safe_chat_history}\n" if safe_chat_history else ""
 
         if direct_answer and not safe_chunks:
-            system_prompt = "You are a helpful, professional enterprise RAG assistant. Respond politely and concisely."
+            system_prompt = (
+                "You are a helpful, production-grade Enterprise Agentic RAG assistant (v5.0) "
+                "equipped with an Intent Router, Hybrid Local Search (ChromaDB Dense + BM25 + FlashRank reranking), "
+                "Live Web Search, and a Hallucination Critic. Respond politely, naturally, and concisely."
+            )
             user_prompt = f"{history_block}User Message:\n{safe_query}"
         else:
             context_block = self.format_context(safe_chunks)

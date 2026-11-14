@@ -70,7 +70,6 @@ Draft Answer:
                         system_instruction=system_prompt,
                         temperature=0.0,
                         response_mime_type="application/json",
-                        thinking_config=types.ThinkingConfig(thinking_budget=0),
                     ),
                 )
                 data = json.loads(response.text)
