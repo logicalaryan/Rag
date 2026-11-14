@@ -1,6 +1,7 @@
 import os
 import json
 import asyncio
+import re
 from typing import AsyncGenerator, Dict, Any, List
 from google import genai
 from app.config import settings
@@ -13,6 +14,21 @@ from app.core.tools.web_search import web_search_tool
 
 
 class RAGOrchestrator:
+    def _contains_sensitive_web_query_data(self, text: str) -> bool:
+        if not text:
+            return False
+        patterns = [
+            r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}",   # email
+            r"\b(?:\+?\d{1,3}[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)\d{3}[-.\s]?\d{4}\b",  # phone
+            r"\b\d{3}-\d{2}-\d{4}\b",  # US SSN-like
+            r"-----BEGIN (?:RSA|EC|DSA|OPENSSH|PGP) PRIVATE KEY-----",
+            r"\b(?:api[_-]?key|secret|token|password|passwd|credential)s?\b",
+        ]
+        lowered = text.lower()
+        if any(k in lowered for k in ("internal only", "confidential", "do not share", "private data")):
+            return True
+        return any(re.search(p, text, flags=re.IGNORECASE) for p in patterns)
+
     """
     Multi-Agent Asynchronous State Machine:
     1. Intent Routing & Query Rewriting
@@ -71,22 +87,30 @@ class RAGOrchestrator:
                 # 2. Tool Execution (parallel when intent == 'both')
                 seen_ids = {c.id for c in context_chunks}
                 if routing.intent == "both":
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Searching local docs & web in parallel: \"{search_query}\"...'})}\n\n"
-                    local_chunks, web_chunks = await asyncio.gather(
-                        local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K),
-                        web_search_tool.execute(search_query, top_k=3),
-                    )
-                    context_chunks.extend(c for c in local_chunks + web_chunks if c.id not in seen_ids)
+                    if self._contains_sensitive_web_query_data(search_query):
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Sensitive content detected; skipping external web search and using local retrieval only.'})}\n\n"
+                        local_chunks = await local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K)
+                        context_chunks.extend(c for c in local_chunks if c.id not in seen_ids)
+                    else:
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Searching local docs & web in parallel: \"{search_query}\"...'})}\n\n"
+                        local_chunks, web_chunks = await asyncio.gather(
+                            local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K),
+                            web_search_tool.execute(search_query, top_k=3),
+                        )
+                        context_chunks.extend(c for c in local_chunks + web_chunks if c.id not in seen_ids)
                 elif routing.intent == "search_local":
                     yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_local_docs (HNSW + BM25 + FlashRank): \"{search_query}\"...'})}\n\n"
                     local_chunks = await local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K)
                     context_chunks.extend(c for c in local_chunks if c.id not in seen_ids)
 
                 if routing.intent == "search_web" or (not context_chunks and routing.intent != "direct_answer"):
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_web: \"{search_query}\"...'})}\n\n"
-                    web_chunks = await web_search_tool.execute(search_query, top_k=3)
-                    seen_ids = {c.id for c in context_chunks}
-                    context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
+                    if self._contains_sensitive_web_query_data(search_query):
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Sensitive content detected; skipping external web search.'})}\n\n"
+                    else:
+                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_web: \"{search_query}\"...'})}\n\n"
+                        web_chunks = await web_search_tool.execute(search_query, top_k=3)
+                        seen_ids = {c.id for c in context_chunks}
+                        context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
 
                 for c in context_chunks:
                     label = f"{c.source}" + (f":p{c.page}" if c.page else "")
