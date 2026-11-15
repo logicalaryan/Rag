@@ -1,9 +1,13 @@
+import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.api.v1.routers import api_router
 from app.core.tools.local_retriever import local_retriever
+from app.core.privacy import PrivacyLogFilter
+
+logging.getLogger().addFilter(PrivacyLogFilter())
 
 
 @asynccontextmanager

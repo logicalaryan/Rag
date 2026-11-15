@@ -1,10 +1,11 @@
 import json
 import logging
-from typing import List
+from typing import List, Optional
 from google import genai
 from google.genai import types
 from app.config import settings
 from app.db.models import CriticEvaluation, RetrievedChunk
+from app.core.privacy import privacy_guard, PrivacyContext
 
 
 class CriticAgent:
@@ -16,7 +17,13 @@ class CriticAgent:
     def __init__(self, client: genai.Client):
         self.client = client
 
-    async def evaluate(self, query: str, context_chunks: List[RetrievedChunk], draft_answer: str) -> CriticEvaluation:
+    async def evaluate(
+        self,
+        query: str,
+        context_chunks: List[RetrievedChunk],
+        draft_answer: str,
+        privacy_ctx: Optional[PrivacyContext] = None,
+    ) -> CriticEvaluation:
         if not draft_answer.strip():
             return CriticEvaluation(
                 passed=False,
@@ -34,7 +41,12 @@ class CriticAgent:
                 feedback="Validated against empty context boundary."
             )
 
-        contexts_text = "\n\n".join([f"[{c.source} | p.{c.page or 1}]: {c.content}" for c in context_chunks])
+        ctx = privacy_ctx or PrivacyContext()
+        safe_chunks = privacy_guard.sanitize_chunks_for_llm(context_chunks, ctx=ctx)
+        safe_query = privacy_guard.sanitize_for_llm(query, ctx=ctx)
+        safe_draft = privacy_guard.sanitize_for_llm(draft_answer, ctx=ctx)
+
+        contexts_text = "\n\n".join([f"[{c.source} | p.{c.page or 1}]: {c.content}" for c in safe_chunks])
 
         system_prompt = """You are the strict Quality and Groundedness Critic for a RAG pipeline.
 Your job is to detect hallucinations, unsupported claims, or ungrounded statements in the draft answer.
@@ -57,10 +69,10 @@ Return strictly a JSON object:
 {contexts_text}
 
 Question:
-{query}
+{safe_query}
 
 Draft Answer:
-{draft_answer}"""
+{safe_draft}"""
         for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):
             try:
                 response = await self.client.aio.models.generate_content(

@@ -3,6 +3,7 @@ from typing import List, Optional
 from google import genai
 from google.genai import types
 from app.config import settings
+from app.core.privacy import privacy_guard
 
 
 class EmbeddingClient:
@@ -27,9 +28,10 @@ class EmbeddingClient:
         if not self.client:
             raise ValueError("GEMINI_API_KEY not configured for embeddings.")
 
+        safe_query = privacy_guard.sanitize_for_embedding(query)
         response = self.client.models.embed_content(
             model=self.model_name,
-            contents=query,
+            contents=safe_query,
             config=types.EmbedContentConfig(
                 task_type="RETRIEVAL_QUERY",
                 output_dimensionality=self.output_dim,
@@ -42,13 +44,14 @@ class EmbeddingClient:
         if not self.client:
             raise ValueError("GEMINI_API_KEY not configured for embeddings.")
 
+        safe_docs = [privacy_guard.sanitize_for_embedding(d) for d in documents]
         all_embeddings = []
-        for i in range(0, len(documents), batch_size):
+        for i in range(0, len(safe_docs), batch_size):
             for attempt in (0, 1):
                 try:
                     res = self.client.models.embed_content(
                         model=self.model_name,
-                        contents=documents[i : i + batch_size],
+                        contents=safe_docs[i : i + batch_size],
                         config=types.EmbedContentConfig(
                             task_type="RETRIEVAL_DOCUMENT",
                             output_dimensionality=self.output_dim,

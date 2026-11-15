@@ -1,9 +1,11 @@
 import json
 import logging
+from typing import Optional
 from google import genai
 from google.genai import types
 from app.config import settings
 from app.db.models import RoutingDecision
+from app.core.privacy import privacy_guard, PrivacyContext
 
 
 class RouterAgent:
@@ -16,7 +18,17 @@ class RouterAgent:
     def __init__(self, client: genai.Client):
         self.client = client
 
-    async def route(self, query: str, chat_history: str = "", critic_feedback: str = "") -> RoutingDecision:
+    async def route(
+        self,
+        query: str,
+        chat_history: str = "",
+        critic_feedback: str = "",
+        privacy_ctx: Optional[PrivacyContext] = None,
+    ) -> RoutingDecision:
+        safe_query = privacy_guard.sanitize_for_llm(query, ctx=privacy_ctx)
+        safe_history = privacy_guard.sanitize_for_llm(chat_history, ctx=privacy_ctx)
+        safe_feedback = privacy_guard.sanitize_for_llm(critic_feedback, ctx=privacy_ctx)
+
         system_prompt = """You are the Query Rewriter and Intent Router for an Agentic RAG system.
 Evaluate the user query and conversational history:
 - 'search_local': For internal company policies, technical specifications, and uploaded documents (Tool: search_local_docs).
@@ -34,16 +46,16 @@ Return strictly a JSON object:
   "reasoning": "<brief 1-sentence reason>"
 }"""
         refinement_note = (
-            f"\n<CRITIC_FEEDBACK>\n{critic_feedback}\n</CRITIC_FEEDBACK>\n"
-            if critic_feedback
+            f"\n<CRITIC_FEEDBACK>\n{safe_feedback}\n</CRITIC_FEEDBACK>\n"
+            if safe_feedback
             else ""
         )
         user_prompt = f"""{refinement_note}<CHAT_HISTORY>
-{chat_history}
+{safe_history}
 </CHAT_HISTORY>
 
 <USER_QUERY>
-{query}
+{safe_query}
 </USER_QUERY>"""
         allowed_intents = {"search_local", "search_web", "both", "direct_answer"}
         for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):

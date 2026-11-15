@@ -6,11 +6,13 @@ from typing import AsyncGenerator, Dict, Any, List
 from google import genai
 from app.config import settings
 from app.db.models import RetrievedChunk
+from app.db.vector_store import vector_store
 from app.core.agents.router import RouterAgent
 from app.core.agents.synthesizer import SynthesizerAgent
 from app.core.agents.critic import CriticAgent
 from app.core.tools.local_retriever import local_retriever
 from app.core.tools.web_search import web_search_tool
+from app.core.privacy import privacy_guard, PrivacyContext
 
 
 class RAGOrchestrator:
@@ -48,18 +50,29 @@ class RAGOrchestrator:
         self.router = RouterAgent(self.client) if self.client else None
         self.synthesizer = SynthesizerAgent(self.client) if self.client else None
         self.critic = CriticAgent(self.client) if self.client else None
+        if self.client:
+            web_search_tool.client = self.client
         self.sessions: Dict[str, List[str]] = {}
 
     async def execute_stream(
-        self, query: str, session_id: str, chat_history: str = ""
+        self,
+        query: str,
+        session_id: str,
+        chat_history: str = "",
+        tenant_id: str = "default",
+        allow_web_search: bool = True,
+        allow_sensitive_web: bool = False,
     ) -> AsyncGenerator[str, None]:
         if not self.client:
             yield f"data: {json.dumps({'type': 'token', 'content': 'Error: GEMINI_API_KEY is not configured on the backend.'})}\n\n"
             yield "data: [DONE]\n\n"
             return
 
-        history_turns = self.sessions.setdefault(session_id, [])
+        session_key = f"{tenant_id}:{session_id}"
+        history_turns = self.sessions.setdefault(session_key, [])
         effective_history = chat_history or "\n".join(history_turns[-6:])
+        privacy_ctx = PrivacyContext()
+        tenant_filter = {"tenant_id": tenant_id} if tenant_id and tenant_id != "default" else None
 
         feedback, draft, approved = "", "", False
         citations: List[str] = []
@@ -71,13 +84,16 @@ class RAGOrchestrator:
                 # 1. Query Rewriter & Router Agent
                 status_prefix = f"[Retry {attempt}/{settings.MAX_CRITIC_RETRIES}] " if attempt > 0 else ""
                 yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Router analyzing intent & rewriting query...'})}\n\n"
-                routing = await self.router.route(query, effective_history, critic_feedback=feedback)
-                search_query = routing.rewritten_query
+                routing = await self.router.route(
+                    query, effective_history, critic_feedback=feedback, privacy_ctx=privacy_ctx
+                )
+                search_query = privacy_ctx.restore(routing.rewritten_query)
+                safe_display_query = privacy_guard.sanitize_for_log(search_query)
 
                 # Direct LLM Response path (Basic Greeting)
                 if routing.intent == "direct_answer" and attempt == 0:
                     async for token in self.synthesizer.stream_generate(
-                        query, [], chat_history=effective_history, direct_answer=True
+                        query, [], chat_history=effective_history, direct_answer=True, privacy_ctx=privacy_ctx
                     ):
                         draft += token
                         yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
@@ -87,30 +103,22 @@ class RAGOrchestrator:
                 # 2. Tool Execution (parallel when intent == 'both')
                 seen_ids = {c.id for c in context_chunks}
                 if routing.intent == "both":
-                    if self._contains_sensitive_web_query_data(search_query):
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Sensitive content detected; skipping external web search and using local retrieval only.'})}\n\n"
-                        local_chunks = await local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K)
-                        context_chunks.extend(c for c in local_chunks if c.id not in seen_ids)
-                    else:
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Searching local docs & web in parallel: \"{search_query}\"...'})}\n\n"
-                        local_chunks, web_chunks = await asyncio.gather(
-                            local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K),
-                            web_search_tool.execute(search_query, top_k=3),
-                        )
-                        context_chunks.extend(c for c in local_chunks + web_chunks if c.id not in seen_ids)
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Searching local docs & web in parallel: \"{search_query}\"...'})}\n\n"
+                    local_chunks, web_chunks = await asyncio.gather(
+                        local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K),
+                        web_search_tool.execute(search_query, top_k=3),
+                    )
+                    context_chunks.extend(c for c in local_chunks + web_chunks if c.id not in seen_ids)
                 elif routing.intent == "search_local":
                     yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_local_docs (HNSW + BM25 + FlashRank): \"{search_query}\"...'})}\n\n"
                     local_chunks = await local_retriever.execute(search_query, top_k=settings.FINAL_TOP_K)
                     context_chunks.extend(c for c in local_chunks if c.id not in seen_ids)
 
                 if routing.intent == "search_web" or (not context_chunks and routing.intent != "direct_answer"):
-                    if self._contains_sensitive_web_query_data(search_query):
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Sensitive content detected; skipping external web search.'})}\n\n"
-                    else:
-                        yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_web: \"{search_query}\"...'})}\n\n"
-                        web_chunks = await web_search_tool.execute(search_query, top_k=3)
-                        seen_ids = {c.id for c in context_chunks}
-                        context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Tool search_web: \"{search_query}\"...'})}\n\n"
+                    web_chunks = await web_search_tool.execute(search_query, top_k=3)
+                    seen_ids = {c.id for c in context_chunks}
+                    context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
 
                 for c in context_chunks:
                     label = f"{c.source}" + (f":p{c.page}" if c.page else "")
@@ -121,13 +129,13 @@ class RAGOrchestrator:
                 yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer drafting grounded answer...'})}\n\n"
                 draft = "".join([
                     t async for t in self.synthesizer.stream_generate(
-                        query, context_chunks, feedback, chat_history=effective_history
+                        query, context_chunks, feedback, chat_history=effective_history, privacy_ctx=privacy_ctx
                     )
                 ])
 
                 # 4. Critic Agent (Is Answer Grounded & Complete?)
                 yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Critic verifying groundedness & completeness...'})}\n\n"
-                verdict = await self.critic.evaluate(query, context_chunks, draft)
+                verdict = await self.critic.evaluate(query, context_chunks, draft, privacy_ctx=privacy_ctx)
                 if verdict.passed:
                     approved = True
                     break
@@ -137,11 +145,15 @@ class RAGOrchestrator:
                 text = draft if approved else (draft or "I could not verify a grounded answer from the available sources.")
                 yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
         except Exception as exc:
-            text = f"Service error while generating response: {exc}"
+            safe_err = privacy_guard.sanitize_for_log(str(exc))
+            text = f"Service error while generating response: {safe_err}"
             yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
         else:
             final_text = draft if approved else (draft or "I could not verify a grounded answer from the available sources.")
-            history_turns.extend([f"User: {query}", f"Assistant: {final_text}"])
+            history_turns.extend([
+                f"User: {privacy_guard.redact_secrets(query)}",
+                f"Assistant: {privacy_guard.redact_secrets(final_text)}",
+            ])
 
         # 5. Emit Citations and Completion
         is_refusal = "do not have enough verified information" in draft.lower() or not approved
