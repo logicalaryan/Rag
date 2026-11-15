@@ -154,6 +154,7 @@ class RAGOrchestrator:
                 f"User: {privacy_guard.redact_secrets(query)}",
                 f"Assistant: {privacy_guard.redact_secrets(final_text)}",
             ])
+            print(f"\n[ORCHESTRATOR SESSIONS DICTIONARY]: {self.sessions}\n", flush=True)
 
         # 5. Emit Citations and Completion
         is_refusal = "do not have enough verified information" in draft.lower() or not approved
