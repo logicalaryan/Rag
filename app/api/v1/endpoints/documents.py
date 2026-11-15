@@ -1,21 +1,22 @@
 import os
 import shutil
 from datetime import datetime
-from typing import List
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException
 from app.config import settings
 from app.db.models import DocumentMetadata, DocumentUploadResponse
 from app.db.vector_store import vector_store
 from app.core.indexing.chunkers import DocumentParser, StructureAwareChunker
 from app.core.indexing.embeddings import embedding_client
 from app.core.tools.local_retriever import local_retriever
+from app.core.privacy import privacy_guard
 
 router = APIRouter()
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
 
 
 @router.get("", response_model=List[DocumentMetadata])
-async def list_documents():
+async def list_documents(tenant_id: Optional[str] = Query(default="default")):
     """Returns list of indexed documents in the knowledge repository."""
     docs_dir = settings.DOCUMENTS_DIR
     files = []
@@ -38,7 +39,7 @@ async def list_documents():
 
 
 @router.post("/upload", response_model=DocumentUploadResponse)
-def upload_document(file: UploadFile = File(...)):
+def upload_document(file: UploadFile = File(...), tenant_id: str = Form(default="default")):
     """Uploads, parses, chunks, embeds, and indexes a document (sync def: FastAPI runs it in a threadpool)."""
     filename = os.path.basename(file.filename or "")
     if not filename.endswith((".pdf", ".txt", ".md")):
@@ -50,16 +51,16 @@ def upload_document(file: UploadFile = File(...)):
     with open(file_path, "wb") as buffer:
         shutil.copyfileobj(file.file, buffer)
 
-    # Ingestion Pipeline: Parse -> Chunk -> Embed -> Index
+    # Ingestion Pipeline: Parse -> Chunk -> Redact Secrets -> Embed -> Index
     try:
         pages = DocumentParser.parse_file(file_path)
         chunker = StructureAwareChunker()
         chunks = chunker.chunk_document(filename, pages)
 
         if chunks:
-            contents = [c["content"] for c in chunks]
+            contents = [privacy_guard.redact_secrets(c["content"]) for c in chunks]
             ids = [c["chunk_id"] for c in chunks]
-            metas = [{"source": c["source"], "page": c["page"]} for c in chunks]
+            metas = [{"source": c["source"], "page": c["page"], "tenant_id": tenant_id or "default"} for c in chunks]
 
             embeddings = embedding_client.embed_documents(contents)
             vector_store.delete_by_source(filename)
@@ -78,4 +79,5 @@ def upload_document(file: UploadFile = File(...)):
             message=f"Successfully indexed {len(chunks)} chunks.",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Ingestion failed: {str(e)}")
+        safe_err = privacy_guard.sanitize_for_log(str(e))
+        raise HTTPException(status_code=500, detail=f"Ingestion failed: {safe_err}")

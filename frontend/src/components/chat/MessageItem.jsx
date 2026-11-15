@@ -1,4 +1,5 @@
 import React from 'react';
+import { MarkdownRenderer } from './MarkdownRenderer';
 import { formatTimestamp } from '../../utils/helpers';
 
 export function MessageItem({ message }) {
@@ -16,10 +17,12 @@ export function MessageItem({ message }) {
             <div className="spinner"></div>
             <span>{message.thinking}</span>
           </div>
-        ) : (
+        ) : isUser ? (
           <div style={{ whiteSpace: 'pre-wrap' }}>
             {message.content}
           </div>
+        ) : (
+          <MarkdownRenderer content={message.content} />
         )}
 
         {/* Citations section if present */}

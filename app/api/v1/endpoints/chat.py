@@ -14,6 +14,9 @@ async def chat_stream(request: ChatRequest):
             query=request.query,
             session_id=request.session_id or "default_session",
             chat_history=request.chat_history or "",
+            tenant_id=request.tenant_id or "default",
+            allow_web_search=request.allow_web_search,
+            allow_sensitive_web=request.allow_sensitive_web,
         ),
         media_type="text/event-stream"
     )

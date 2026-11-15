@@ -416,6 +416,106 @@ body {
   border-bottom-left-radius: 2px;
 }
 
+/* Markdown typography styling */
+.markdown-content {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.markdown-content .md-h2 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-top: 6px;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 4px;
+}
+
+.markdown-content .md-h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-top: 4px;
+}
+
+.markdown-content .md-h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.markdown-content .md-p {
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.markdown-content .md-list {
+  padding-left: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.markdown-content .md-list li {
+  line-height: 1.5;
+}
+
+.markdown-content .md-math {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  color: #f4f4f5;
+}
+
+.markdown-content .md-inline-code {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  color: #e4e4e7;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.markdown-content .md-code-block {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  margin: 6px 0;
+}
+
+.markdown-content .md-code-lang {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  background: var(--bg-tertiary);
+  padding: 4px 10px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.markdown-content .md-code-block pre {
+  padding: 12px 14px;
+  overflow-x: auto;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+
+.markdown-content .md-link {
+  color: #60a5fa;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.markdown-content .md-link:hover {
+  color: #93c5fd;
+}
+
 .thinking-indicator {
   display: flex;
   align-items: center;
