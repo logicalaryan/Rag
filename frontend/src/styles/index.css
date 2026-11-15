@@ -461,6 +461,15 @@ body {
   line-height: 1.5;
 }
 
+.markdown-content .md-math {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  background: var(--bg-tertiary);
+  padding: 1px 4px;
+  border-radius: var(--radius-sm);
+  color: #f4f4f5;
+}
+
 .markdown-content .md-inline-code {
   font-family: var(--font-mono);
   font-size: 12px;

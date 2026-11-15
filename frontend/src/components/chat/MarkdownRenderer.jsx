@@ -88,13 +88,13 @@ export function MarkdownRenderer({ content }) {
 }
 
 /**
- * Parses inline elements: bold (**text**), italic (*text*), inline code (`code`), links ([text](url)).
+ * Parses inline elements: math ($math$), bold (**text**), italic (*text*), inline code (`code`), links ([text](url)).
  */
 function renderInline(text) {
   if (!text) return '';
 
-  // Tokenize regex: inline code, links, bold, italic
-  const tokenRegex = /(`[^`]+`|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g;
+  // Tokenize regex: inline code, math ($...$), links, bold, italic
+  const tokenRegex = /(`[^`]+`|\$[^$]+\$|\[[^\]]+\]\([^)]+\)|\*\*[^*]+\*\*|\*[^*]+\*)/g;
   const parts = text.split(tokenRegex);
 
   return parts.map((part, i) => {
@@ -106,6 +106,25 @@ function renderInline(text) {
         <code key={i} className="md-inline-code">
           {part.slice(1, -1)}
         </code>
+      );
+    }
+
+    // Inline LaTeX math: $3 \times 3 = 9$ -> clean readable math
+    if (part.startsWith('$') && part.endsWith('$') && part.length >= 2) {
+      const cleanMath = part
+        .slice(1, -1)
+        .replace(/\\times/g, '×')
+        .replace(/\\cdot/g, '·')
+        .replace(/\\div/g, '÷')
+        .replace(/\\pm/g, '±')
+        .replace(/\\leq/g, '≤')
+        .replace(/\\geq/g, '≥')
+        .replace(/\\neq/g, '≠')
+        .replace(/\\approx/g, '≈');
+      return (
+        <span key={i} className="md-math">
+          {cleanMath}
+        </span>
       );
     }
 
