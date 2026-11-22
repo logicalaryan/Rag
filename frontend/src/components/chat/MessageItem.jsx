@@ -8,7 +8,7 @@ export function MessageItem({ message }) {
   return (
     <div className={`message-item ${isUser ? 'user' : 'assistant'}`}>
       <span className="message-role">
-        {isUser ? 'User' : 'Assistant / Critic'}
+        {isUser ? 'You' : 'Assistant'}
       </span>
 
       <div className="message-bubble">

@@ -33,8 +33,7 @@ export function DocumentUpload() {
         onChange={onFileChange}
       />
       <div
-        className="upload-dropzone"
-        style={{ borderColor: isDragOver ? 'var(--text-primary)' : undefined }}
+        className={`upload-dropzone ${isDragOver ? 'drag-over' : ''}`}
         onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
@@ -43,7 +42,7 @@ export function DocumentUpload() {
         onDragLeave={() => setIsDragOver(false)}
         onDrop={onDrop}
       >
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ margin: '0 auto' }}>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="17 8 12 3 7 8"></polyline>
           <line x1="12" y1="3" x2="12" y2="15"></line>
@@ -51,11 +50,7 @@ export function DocumentUpload() {
         <p>{isUploading ? 'Uploading & Ingesting...' : 'Upload PDF, Markdown, or Plain Text'}</p>
         <span>Drag & drop or click to browse</span>
       </div>
-      {uploadError && (
-        <div style={{ color: '#ef4444', fontSize: '11px', marginTop: '6px' }}>
-          {uploadError}
-        </div>
-      )}
+      {uploadError && <div className="upload-error">{uploadError}</div>}
     </div>
   );
 }
