@@ -35,8 +35,13 @@ class RAGOrchestrator:
 
     @staticmethod
     async def _yield_words_smoothly(chunk_text: str) -> AsyncGenerator[str, None]:
-        """Splits large Gemini chunks into small word groups so the UI renders smooth word-by-word streaming."""
-        tokens = re.findall(r"\S+\s*|\n+", chunk_text)
+        """
+        Splits multi-sentence Gemini chunks into small word groups while preserving
+        ALL leading and trailing whitespace so words never stick together.
+        """
+        if not chunk_text:
+            return
+        tokens = re.findall(r"\s*\S+\s*|\n+", chunk_text)
         if len(tokens) <= 2:
             yield f"data: {json.dumps({'type': 'token', 'content': chunk_text})}\n\n"
             return
@@ -131,14 +136,16 @@ class RAGOrchestrator:
         my_future = loop.create_future()
         gemini_gateway._inflight[cache_key] = my_future
 
-        # Load recent conversation history from PostgreSQL (or fall back to in-memory buffer)
+        # Use provided chat_history or in-memory buffer first for zero-latency startup;
+        # only query Postgres if both are empty
         history_turns = self.sessions.setdefault(session_key, [])
         if len(history_turns) > 12:
             del history_turns[:-12]
-        effective_history = chat_history
+        effective_history = chat_history or "\n".join(history_turns[-4:])
         if not effective_history:
             pg_turns = await conversation_store.get_recent_history(session_id=session_id, tenant_id=tenant_id, limit=4)
-            effective_history = "\n".join(pg_turns) if pg_turns else "\n".join(history_turns[-4:])
+            if pg_turns:
+                effective_history = "\n".join(pg_turns)
 
         privacy_ctx = PrivacyContext()
         tenant_filter = {"tenant_id": tenant_id} if tenant_id and tenant_id != "default" else None
@@ -151,7 +158,6 @@ class RAGOrchestrator:
         try:
             for attempt in range(settings.MAX_CRITIC_RETRIES + 1):
                 status_prefix = f"[Retry {attempt}/{settings.MAX_CRITIC_RETRIES}] " if attempt > 0 else ""
-                yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Router analyzing intent & rewriting query...'})}\n\n"
                 routing = await self.router.route(
                     query,
                     effective_history,
@@ -274,13 +280,15 @@ class RAGOrchestrator:
             is_refusal = "do not have enough verified information" in final_text.lower() or not approved
             final_citations = citations if (citations and not is_refusal) else []
 
-            # Persist turn to Neon PostgreSQL
-            await conversation_store.save_turn(
-                session_id=session_id,
-                tenant_id=tenant_id,
-                user_query=safe_user_msg,
-                assistant_answer=safe_assistant_msg,
-                citations=final_citations,
+            # Persist turn to Neon PostgreSQL in background so streaming completion is never delayed
+            asyncio.create_task(
+                conversation_store.save_turn(
+                    session_id=session_id,
+                    tenant_id=tenant_id,
+                    user_query=safe_user_msg,
+                    assistant_answer=safe_assistant_msg,
+                    citations=final_citations,
+                )
             )
 
             payload = {"text": final_text, "citations": final_citations}

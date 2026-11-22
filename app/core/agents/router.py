@@ -14,6 +14,13 @@ _GREETING_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Keywords that genuinely require a live Google Web Search when no local docs exist
+_LIVE_WEB_RE = re.compile(
+    r"\b(weather|temperature|forecast|news|today|tonight|yesterday|current|currently|"
+    r"latest|live|stock|price|bitcoin|crypto|score|match|election|2025|2026|right\s+now)\b",
+    re.IGNORECASE,
+)
+
 
 class RouterAgent:
     """
@@ -33,11 +40,29 @@ class RouterAgent:
         privacy_ctx: Optional[PrivacyContext] = None,
         has_local_docs: bool = True,
     ) -> RoutingDecision:
-        if _GREETING_RE.match(query or ""):
+        cleaned_query = (query or "").strip()
+
+        # 1. Zero-latency fast-path for greetings
+        if _GREETING_RE.match(cleaned_query):
             return RoutingDecision(
                 intent="direct_answer",
-                rewritten_query=query.strip(),
+                rewritten_query=cleaned_query,
                 reasoning="Heuristic fast-path for greeting",
+            )
+
+        # 2. Zero-latency fast-path when Knowledge Base is empty (0 uploaded documents):
+        # Skip the 2.5s Router LLM call unless the query asks for live/real-time web info
+        if not has_local_docs and not critic_feedback:
+            if _LIVE_WEB_RE.search(cleaned_query):
+                return RoutingDecision(
+                    intent="search_web",
+                    rewritten_query=cleaned_query,
+                    reasoning="Fast-path live web search (KB empty)",
+                )
+            return RoutingDecision(
+                intent="direct_answer",
+                rewritten_query=cleaned_query,
+                reasoning="Fast-path direct answer (KB empty, non-volatile query)",
             )
 
         safe_query = (privacy_guard.sanitize_for_llm(query, ctx=privacy_ctx) or "")[:500]
