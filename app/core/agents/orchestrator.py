@@ -33,6 +33,19 @@ class RAGOrchestrator:
             return True
         return any(re.search(p, text, flags=re.IGNORECASE) for p in patterns)
 
+    @staticmethod
+    async def _yield_words_smoothly(chunk_text: str) -> AsyncGenerator[str, None]:
+        """Splits large Gemini chunks into small word groups so the UI renders smooth word-by-word streaming."""
+        tokens = re.findall(r"\S+\s*|\n+", chunk_text)
+        if len(tokens) <= 2:
+            yield f"data: {json.dumps({'type': 'token', 'content': chunk_text})}\n\n"
+            return
+        step = 2
+        for i in range(0, len(tokens), step):
+            piece = "".join(tokens[i : i + step])
+            yield f"data: {json.dumps({'type': 'token', 'content': piece})}\n\n"
+            await asyncio.sleep(0.012)
+
     """
     Multi-Agent Asynchronous State Machine:
     1. Request Rate Limiting, Tenant-Scoped Cache & Single-Flight Coalescing
@@ -92,7 +105,8 @@ class RAGOrchestrator:
         )
         cached = gemini_gateway.get_cached(cache_key)
         if cached:
-            yield f"data: {json.dumps({'type': 'token', 'content': cached['text']})}\n\n"
+            async for sse_line in self._yield_words_smoothly(cached["text"]):
+                yield sse_line
             if cached.get("citations"):
                 yield f"data: {json.dumps({'type': 'citations', 'sources': cached['citations']})}\n\n"
             yield "data: [DONE]\n\n"
@@ -104,7 +118,8 @@ class RAGOrchestrator:
             yield f"data: {json.dumps({'type': 'thinking', 'content': 'Awaiting identical in-flight request...'})}\n\n"
             try:
                 result = await asyncio.wait_for(asyncio.shield(inflight_fut), timeout=settings.GEMINI_TIMEOUT_SECONDS)
-                yield f"data: {json.dumps({'type': 'token', 'content': result['text']})}\n\n"
+                async for sse_line in self._yield_words_smoothly(result["text"]):
+                    yield sse_line
                 if result.get("citations"):
                     yield f"data: {json.dumps({'type': 'citations', 'sources': result['citations']})}\n\n"
                 yield "data: [DONE]\n\n"
@@ -153,7 +168,8 @@ class RAGOrchestrator:
                         query, [], chat_history=effective_history, direct_answer=True, privacy_ctx=privacy_ctx
                     ):
                         draft += token
-                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                        async for sse_line in self._yield_words_smoothly(token):
+                            yield sse_line
                     approved = True
                     streamed_directly = True
                     break
@@ -185,13 +201,14 @@ class RAGOrchestrator:
                     context_chunks.extend(c for c in web_chunks if c.id not in seen_ids)
 
                 # If KB is empty and Web Search Grounding returned empty (e.g. grounding quota limit),
-                # answer general queries directly rather than burning 2+ extra calls on empty context
+                # stream direct answer word-by-word rather than burning extra calls on empty context
                 if not context_chunks and kb_count == 0:
                     async for token in self.synthesizer.stream_generate(
                         query, [], chat_history=effective_history, direct_answer=True, privacy_ctx=privacy_ctx
                     ):
                         draft += token
-                        yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                        async for sse_line in self._yield_words_smoothly(token):
+                            yield sse_line
                     approved = True
                     streamed_directly = True
                     break
@@ -201,7 +218,23 @@ class RAGOrchestrator:
                     if label not in citations:
                         citations.append(label)
 
-                # Synthesizer Agent (Draft Answer)
+                only_web_sources = bool(context_chunks) and all(c.id.startswith("web_google") for c in context_chunks)
+                is_final_attempt = attempt >= settings.MAX_CRITIC_RETRIES
+
+                # Stream tokens live word-by-word when no Critic retry loop is needed
+                if not context_chunks or only_web_sources or is_final_attempt:
+                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer streaming grounded answer...'})}\n\n"
+                    async for token in self.synthesizer.stream_generate(
+                        query, context_chunks, feedback, chat_history=effective_history, privacy_ctx=privacy_ctx
+                    ):
+                        draft += token
+                        async for sse_line in self._yield_words_smoothly(token):
+                            yield sse_line
+                    approved = True
+                    streamed_directly = True
+                    break
+
+                # Multi-retry Critic path (only when MAX_CRITIC_RETRIES > 0 and local docs exist)
                 yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer drafting grounded answer...'})}\n\n"
                 draft = "".join([
                     t async for t in self.synthesizer.stream_generate(
@@ -209,13 +242,6 @@ class RAGOrchestrator:
                     )
                 ])
 
-                # Skip extra Critic LLM call when context is empty or came solely from Google Search Grounding
-                only_web_sources = bool(context_chunks) and all(c.id.startswith("web_google") for c in context_chunks)
-                if not context_chunks or only_web_sources:
-                    approved = True
-                    break
-
-                # Critic Agent (Is Answer Grounded & Complete?)
                 yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Critic verifying groundedness & completeness...'})}\n\n"
                 verdict = await self.critic.evaluate(query, context_chunks, draft, privacy_ctx=privacy_ctx)
                 if verdict.passed:
@@ -225,7 +251,8 @@ class RAGOrchestrator:
 
             if not streamed_directly:
                 text = draft if approved else (draft or "I could not verify a grounded answer from the available sources.")
-                yield f"data: {json.dumps({'type': 'token', 'content': text})}\n\n"
+                async for sse_line in self._yield_words_smoothly(text):
+                    yield sse_line
         except Exception as exc:
             safe_err = privacy_guard.sanitize_for_log(str(exc))
             if "429" in safe_err or "RESOURCE_EXHAUSTED" in safe_err:

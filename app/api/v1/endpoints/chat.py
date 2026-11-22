@@ -8,7 +8,7 @@ router = APIRouter()
 
 @router.post("")
 async def chat_stream(request: ChatRequest):
-    """SSE Streaming Chat Endpoint using native FastAPI StreamingResponse."""
+    """SSE Streaming Chat Endpoint with proxy buffering disabled for real-time word-by-word streaming."""
     return StreamingResponse(
         orchestrator.execute_stream(
             query=request.query,
@@ -18,5 +18,10 @@ async def chat_stream(request: ChatRequest):
             allow_web_search=request.allow_web_search,
             allow_sensitive_web=request.allow_sensitive_web,
         ),
-        media_type="text/event-stream"
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache, no-transform",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
