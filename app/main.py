@@ -26,13 +26,13 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
-# Enable CORS for Cloudflare Pages and local Vite development
+# Enable CORS restricted to your Cloudflare Pages project and local Vite dev
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.CORS_ORIGINS,
-    allow_origin_regex=r"https://.*\.pages\.dev",
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origin_regex=settings.CORS_Origin_REGEX,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Accept", "X-API-Key", "Authorization"],
 )
 
 # Mount API v1
