@@ -6,6 +6,7 @@ from google.genai import types
 from app.config import settings
 from app.db.models import CriticEvaluation, RetrievedChunk
 from app.core.privacy import privacy_guard, PrivacyContext
+from app.core.llm_gateway import gemini_gateway
 
 
 class CriticAgent:
@@ -32,7 +33,6 @@ class CriticAgent:
                 feedback="Empty draft generated.",
             )
         if not context_chunks:
-            # If no context, check if the model appropriately refused or gave conversational greeting
             is_polite_refusal = any(phrase in draft_answer.lower() for phrase in ["not mentioned", "cannot find", "do not have", "hello", "hi "])
             return CriticEvaluation(
                 passed=is_polite_refusal,
@@ -43,10 +43,13 @@ class CriticAgent:
 
         ctx = privacy_ctx or PrivacyContext()
         safe_chunks = privacy_guard.sanitize_chunks_for_llm(context_chunks, ctx=ctx)
-        safe_query = privacy_guard.sanitize_for_llm(query, ctx=ctx)
-        safe_draft = privacy_guard.sanitize_for_llm(draft_answer, ctx=ctx)
+        safe_query = (privacy_guard.sanitize_for_llm(query, ctx=ctx) or "")[:500]
+        safe_draft = (privacy_guard.sanitize_for_llm(draft_answer, ctx=ctx) or "")[:1500]
 
-        contexts_text = "\n\n".join([f"[{c.source} | p.{c.page or 1}]: {c.content}" for c in safe_chunks])
+        max_chars = settings.MAX_CHUNK_CHARS
+        contexts_text = "\n\n".join(
+            [f"[{c.source} | p.{c.page or 1}]: {c.content[:max_chars]}" for c in safe_chunks[:settings.FINAL_TOP_K]]
+        )
 
         system_prompt = """You are the strict Quality and Groundedness Critic for a RAG pipeline.
 Your job is to detect hallucinations, unsupported claims, or ungrounded statements in the draft answer.
@@ -73,16 +76,19 @@ Question:
 
 Draft Answer:
 {safe_draft}"""
-        for model in (settings.PRIMARY_MODEL, settings.FALLBACK_MODEL):
+        models = [m for m in dict.fromkeys([settings.PRIMARY_MODEL, settings.FALLBACK_MODEL]) if m]
+        for model in models:
             try:
-                response = await self.client.aio.models.generate_content(
-                    model=model,
-                    contents=user_prompt,
-                    config=types.GenerateContentConfig(
-                        system_instruction=system_prompt,
-                        temperature=0.0,
-                        response_mime_type="application/json",
-                    ),
+                response = await gemini_gateway.call(
+                    lambda m=model: self.client.aio.models.generate_content(
+                        model=m,
+                        contents=user_prompt,
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.0,
+                            response_mime_type="application/json",
+                        ),
+                    )
                 )
                 data = json.loads(response.text)
                 return CriticEvaluation(
@@ -92,9 +98,8 @@ Draft Answer:
                     feedback=data.get("feedback"),
                     detected_hallucinations=data.get("detected_hallucinations", []),
                 )
-            except Exception:
-                if model == settings.FALLBACK_MODEL:
-                    logging.exception("critic failed, passing draft unverified")
+            except Exception as exc:
+                logging.warning("Critic failed on %s: %s", model, exc)
         return CriticEvaluation(
             passed=True,
             faithfulness_score=1.0,
