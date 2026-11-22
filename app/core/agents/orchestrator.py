@@ -36,20 +36,15 @@ class RAGOrchestrator:
     @staticmethod
     async def _yield_words_smoothly(chunk_text: str) -> AsyncGenerator[str, None]:
         """
-        Splits multi-sentence Gemini chunks into small word groups while preserving
-        ALL leading and trailing whitespace so words never stick together.
+        Splits multi-sentence Gemini chunks into individual words while preserving
+        ALL leading and trailing whitespace so words stream visibly in real time.
         """
         if not chunk_text:
             return
         tokens = re.findall(r"\s*\S+\s*|\n+", chunk_text)
-        if len(tokens) <= 2:
-            yield f"data: {json.dumps({'type': 'token', 'content': chunk_text})}\n\n"
-            return
-        step = 2
-        for i in range(0, len(tokens), step):
-            piece = "".join(tokens[i : i + step])
-            yield f"data: {json.dumps({'type': 'token', 'content': piece})}\n\n"
-            await asyncio.sleep(0.012)
+        for token in tokens:
+            yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+            await asyncio.sleep(0.018)
 
     """
     Multi-Agent Asynchronous State Machine:
@@ -224,36 +219,36 @@ class RAGOrchestrator:
                     if label not in citations:
                         citations.append(label)
 
+                # Speculative Streaming (Fix 1): Always stream words live to the UI first,
+                # then verify with Critic and emit a verification stamp (or rollback & retry on failure)
+                draft = ""
+                yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer streaming grounded answer...'})}\n\n"
+                async for token in self.synthesizer.stream_generate(
+                    query, context_chunks, feedback, chat_history=effective_history, privacy_ctx=privacy_ctx
+                ):
+                    draft += token
+                    async for sse_line in self._yield_words_smoothly(token):
+                        yield sse_line
+                streamed_directly = True
+
                 only_web_sources = bool(context_chunks) and all(c.id.startswith("web_google") for c in context_chunks)
                 is_final_attempt = attempt >= settings.MAX_CRITIC_RETRIES
 
-                # Stream tokens live word-by-word when no Critic retry loop is needed
                 if not context_chunks or only_web_sources or is_final_attempt:
-                    yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer streaming grounded answer...'})}\n\n"
-                    async for token in self.synthesizer.stream_generate(
-                        query, context_chunks, feedback, chat_history=effective_history, privacy_ctx=privacy_ctx
-                    ):
-                        draft += token
-                        async for sse_line in self._yield_words_smoothly(token):
-                            yield sse_line
                     approved = True
-                    streamed_directly = True
+                    yield f"data: {json.dumps({'type': 'verified', 'passed': True})}\n\n"
                     break
 
-                # Multi-retry Critic path (only when MAX_CRITIC_RETRIES > 0 and local docs exist)
-                yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Synthesizer drafting grounded answer...'})}\n\n"
-                draft = "".join([
-                    t async for t in self.synthesizer.stream_generate(
-                        query, context_chunks, feedback, chat_history=effective_history, privacy_ctx=privacy_ctx
-                    )
-                ])
-
-                yield f"data: {json.dumps({'type': 'thinking', 'content': f'{status_prefix}Critic verifying groundedness & completeness...'})}\n\n"
+                # Post-stream Critic check when MAX_CRITIC_RETRIES > 0 and local docs exist
                 verdict = await self.critic.evaluate(query, context_chunks, draft, privacy_ctx=privacy_ctx)
                 if verdict.passed:
                     approved = True
+                    yield f"data: {json.dumps({'type': 'verified', 'passed': True})}\n\n"
                     break
+
+                # Hallucination detected: instruct UI to clear the speculative draft and retry
                 feedback = verdict.feedback or "Ensure all claims are grounded and complete."
+                yield f"data: {json.dumps({'type': 'reset', 'content': 'Critic refining draft for strict grounding...'})}\n\n"
 
             if not streamed_directly:
                 text = draft if approved else (draft or "I could not verify a grounded answer from the available sources.")

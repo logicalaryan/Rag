@@ -9,6 +9,9 @@ export function MessageItem({ message }) {
     <div className={`message-item ${isUser ? 'user' : 'assistant'}`}>
       <span className="message-role">
         {isUser ? 'You' : 'Assistant'}
+        {!isUser && message.verified && (
+          <span className="verified-badge">· Verified</span>
+        )}
       </span>
 
       <div className="message-bubble">

@@ -4,7 +4,7 @@
 
 const API_BASE = import.meta.env.VITE_API_BASE_URL || '';
 
-export async function streamChatResponse({ query, sessionId, chatHistory = '', onToken, onThinking, onCitations, onDone, onError }) {
+export async function streamChatResponse({ query, sessionId, chatHistory = '', onToken, onThinking, onCitations, onVerified, onReset, onDone, onError }) {
   try {
     const response = await fetch(`${API_BASE}/api/v1/chat`, {
       method: 'POST',
@@ -53,10 +53,16 @@ export async function streamChatResponse({ query, sessionId, chatHistory = '', o
             onThinking(payload.content);
           } else if (payload.type === 'citations' && onCitations) {
             onCitations(payload.sources);
+          } else if (payload.type === 'verified' && onVerified) {
+            onVerified(Boolean(payload.passed));
+          } else if (payload.type === 'reset' && onReset) {
+            onReset(payload.content);
           }
         } catch {
           if (onToken) onToken(dataStr);
         }
+        // Yield a macrotask frame so React paints each streamed word live instead of batching a TCP chunk
+        await new Promise((r) => setTimeout(r, 12));
       }
     }
 

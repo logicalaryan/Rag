@@ -77,6 +77,7 @@ export function ChatProvider({ children }) {
       content: '',
       thinking: 'Router analyzing intent & rewriting query...',
       citations: [],
+      verified: false,
       timestamp: new Date(),
     };
 
@@ -140,6 +141,32 @@ export function ChatProvider({ children }) {
             if (session.id === targetSessionId) {
               const updated = session.messages.map((m) =>
                 m.id === assistantMsgId ? { ...m, citations: sources } : m
+              );
+              return { ...session, messages: updated };
+            }
+            return session;
+          })
+        );
+      },
+      onVerified: (passed) => {
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.id === targetSessionId) {
+              const updated = session.messages.map((m) =>
+                m.id === assistantMsgId ? { ...m, verified: passed } : m
+              );
+              return { ...session, messages: updated };
+            }
+            return session;
+          })
+        );
+      },
+      onReset: (thinkingText) => {
+        setSessions((prev) =>
+          prev.map((session) => {
+            if (session.id === targetSessionId) {
+              const updated = session.messages.map((m) =>
+                m.id === assistantMsgId ? { ...m, content: '', thinking: thinkingText } : m
               );
               return { ...session, messages: updated };
             }
