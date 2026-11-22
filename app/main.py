@@ -6,6 +6,7 @@ from app.config import settings
 from app.api.v1.routers import api_router
 from app.core.tools.local_retriever import local_retriever
 from app.core.privacy import PrivacyLogFilter
+from app.db.postgres import conversation_store
 
 logging.getLogger().addFilter(PrivacyLogFilter())
 
@@ -13,6 +14,7 @@ logging.getLogger().addFilter(PrivacyLogFilter())
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     local_retriever._ensure_bm25()
+    await conversation_store.init_db()
     yield
 
 

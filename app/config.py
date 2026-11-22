@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     # AI & Model configs
     GEMINI_API_KEY: str = ""
+    DATABASE_URL: str = ""
     PRIMARY_MODEL: str = "gemini-3.5-flash-lite"
     # Distinct fallback model (empty string prevents double-hitting the same model on 429)
     FALLBACK_MODEL: str = ""

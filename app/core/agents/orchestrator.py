@@ -7,6 +7,7 @@ from google import genai
 from app.config import settings
 from app.db.models import RetrievedChunk
 from app.db.vector_store import vector_store
+from app.db.postgres import conversation_store
 from app.core.agents.router import RouterAgent
 from app.core.agents.synthesizer import SynthesizerAgent
 from app.core.agents.critic import CriticAgent
@@ -38,7 +39,7 @@ class RAGOrchestrator:
     2. Intent Routing & Query Rewriting
     3. Tool Execution (Local Hybrid Search / Web Search)
     4. Grounded Synthesis & Critic Verification
-    5. SSE Event Emission
+    5. PostgreSQL Conversation Persistence & SSE Event Emission
     """
 
     def __init__(self):
@@ -115,10 +116,15 @@ class RAGOrchestrator:
         my_future = loop.create_future()
         gemini_gateway._inflight[cache_key] = my_future
 
+        # Load recent conversation history from PostgreSQL (or fall back to in-memory buffer)
         history_turns = self.sessions.setdefault(session_key, [])
         if len(history_turns) > 12:
             del history_turns[:-12]
-        effective_history = chat_history or "\n".join(history_turns[-4:])
+        effective_history = chat_history
+        if not effective_history:
+            pg_turns = await conversation_store.get_recent_history(session_id=session_id, tenant_id=tenant_id, limit=4)
+            effective_history = "\n".join(pg_turns) if pg_turns else "\n".join(history_turns[-4:])
+
         privacy_ctx = PrivacyContext()
         tenant_filter = {"tenant_id": tenant_id} if tenant_id and tenant_id != "default" else None
 
@@ -231,12 +237,25 @@ class RAGOrchestrator:
                 my_future.set_exception(exc)
         else:
             final_text = draft if approved else (draft or "I could not verify a grounded answer from the available sources.")
+            safe_user_msg = privacy_guard.redact_secrets(query)
+            safe_assistant_msg = privacy_guard.redact_secrets(final_text)
+
             history_turns.extend([
-                f"User: {privacy_guard.redact_secrets(query)}",
-                f"Assistant: {privacy_guard.redact_secrets(final_text)}",
+                f"User: {safe_user_msg}",
+                f"Assistant: {safe_assistant_msg}",
             ])
             is_refusal = "do not have enough verified information" in final_text.lower() or not approved
             final_citations = citations if (citations and not is_refusal) else []
+
+            # Persist turn to Neon PostgreSQL
+            await conversation_store.save_turn(
+                session_id=session_id,
+                tenant_id=tenant_id,
+                user_query=safe_user_msg,
+                assistant_answer=safe_assistant_msg,
+                citations=final_citations,
+            )
+
             payload = {"text": final_text, "citations": final_citations}
             if approved and not is_refusal:
                 gemini_gateway.set_cached(cache_key, payload)
