@@ -9,15 +9,22 @@ from app.db.models import RoutingDecision
 from app.core.privacy import privacy_guard, PrivacyContext
 from app.core.llm_gateway import gemini_gateway
 
-_GREETING_RE = re.compile(
-    r"^\s*(hi|hello|hey|good\s+(morning|afternoon|evening)|thanks|thank\s+you|yo|hola)[!.?\s]*$",
+_GREETING_OR_META_RE = re.compile(
+    r"^\s*(hi|hello|hey|good\s+(morning|afternoon|evening)|thanks|thank\s+you|yo|hola|"
+    r"who\s+are\s+you|what\s+can\s+you\s+do|are\s+you\s+production\s+ready)[!.?\s]*$",
     re.IGNORECASE,
 )
 
-# Keywords that genuinely require a live Google Web Search when no local docs exist
+# Keywords that require a live Google Web Search
 _LIVE_WEB_RE = re.compile(
     r"\b(weather|temperature|forecast|news|today|tonight|yesterday|current|currently|"
     r"latest|live|stock|price|bitcoin|crypto|score|match|election|2025|2026|right\s+now)\b",
+    re.IGNORECASE,
+)
+
+# Follow-up pronouns that require the Router LLM to rewrite using chat_history
+_PRONOUN_RE = re.compile(
+    r"\b(it|its|that|this|these|those|they|them|their|he|she|him|her|his|hers|there|former|latter)\b",
     re.IGNORECASE,
 )
 
@@ -42,27 +49,37 @@ class RouterAgent:
     ) -> RoutingDecision:
         cleaned_query = (query or "").strip()
 
-        # 1. Zero-latency fast-path for greetings
-        if _GREETING_RE.match(cleaned_query):
+        # 1. Zero-latency fast-path for greetings & meta-questions (0ms)
+        if _GREETING_OR_META_RE.match(cleaned_query):
             return RoutingDecision(
                 intent="direct_answer",
                 rewritten_query=cleaned_query,
-                reasoning="Heuristic fast-path for greeting",
+                reasoning="Heuristic fast-path for greeting/meta query",
             )
 
-        # 2. Zero-latency fast-path when Knowledge Base is empty (0 uploaded documents):
-        # Skip the 2.5s Router LLM call unless the query asks for live/real-time web info
-        if not has_local_docs and not critic_feedback:
+        # 2. Fast keyword routing (Option 4):
+        # Skip the 2s Router LLM call unless critic_feedback exists OR the query has
+        # follow-up pronouns ("it", "that", "they") that need chat_history rewriting.
+        needs_llm_rewrite = bool(critic_feedback) or (
+            bool(chat_history and chat_history.strip()) and bool(_PRONOUN_RE.search(cleaned_query))
+        )
+        if not needs_llm_rewrite:
             if _LIVE_WEB_RE.search(cleaned_query):
                 return RoutingDecision(
                     intent="search_web",
                     rewritten_query=cleaned_query,
-                    reasoning="Fast-path live web search (KB empty)",
+                    reasoning="Fast-path keyword rule: live web query",
+                )
+            if not has_local_docs:
+                return RoutingDecision(
+                    intent="direct_answer",
+                    rewritten_query=cleaned_query,
+                    reasoning="Fast-path rule: KB empty, direct answer",
                 )
             return RoutingDecision(
-                intent="direct_answer",
+                intent="search_local",
                 rewritten_query=cleaned_query,
-                reasoning="Fast-path direct answer (KB empty, non-volatile query)",
+                reasoning="Fast-path rule: standalone query routed to local KB",
             )
 
         safe_query = (privacy_guard.sanitize_for_llm(query, ctx=privacy_ctx) or "")[:500]
@@ -100,17 +117,22 @@ Return strictly a JSON object:
         allowed_intents = {"search_local", "search_web", "both", "direct_answer"}
         models = [m for m in dict.fromkeys([settings.PRIMARY_MODEL, settings.FALLBACK_MODEL]) if m]
 
+        # Option 1: Disable internal thinking delay (thinking_budget=0) for fast routing
+        gen_config_kwargs = dict(
+            system_instruction=system_prompt,
+            temperature=0.0,
+            response_mime_type="application/json",
+        )
+        if hasattr(types, "ThinkingConfig"):
+            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+
         for model in models:
             try:
                 response = await gemini_gateway.call(
                     lambda m=model: self.client.aio.models.generate_content(
                         model=m,
                         contents=user_prompt,
-                        config=types.GenerateContentConfig(
-                            system_instruction=system_prompt,
-                            temperature=0.0,
-                            response_mime_type="application/json",
-                        ),
+                        config=types.GenerateContentConfig(**gen_config_kwargs),
                     )
                 )
                 data = json.loads(response.text)
