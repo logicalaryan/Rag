@@ -117,22 +117,17 @@ Return strictly a JSON object:
         allowed_intents = {"search_local", "search_web", "both", "direct_answer"}
         models = [m for m in dict.fromkeys([settings.PRIMARY_MODEL, settings.FALLBACK_MODEL]) if m]
 
-        # Option 1: Disable internal thinking delay (thinking_budget=0) for fast routing
-        gen_config_kwargs = dict(
-            system_instruction=system_prompt,
-            temperature=0.0,
-            response_mime_type="application/json",
-        )
-        if hasattr(types, "ThinkingConfig"):
-            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-
         for model in models:
             try:
                 response = await gemini_gateway.call(
                     lambda m=model: self.client.aio.models.generate_content(
                         model=m,
                         contents=user_prompt,
-                        config=types.GenerateContentConfig(**gen_config_kwargs),
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.0,
+                            response_mime_type="application/json",
+                        ),
                     )
                 )
                 data = json.loads(response.text)

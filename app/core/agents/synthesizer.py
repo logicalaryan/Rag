@@ -70,14 +70,6 @@ Rules:
 User Query:
 {safe_query}"""
 
-        # Option 1: Disable internal thinking delay (thinking_budget=0) so first token streams immediately
-        gen_config_kwargs = dict(
-            system_instruction=system_prompt,
-            temperature=0.2,
-        )
-        if hasattr(types, "ThinkingConfig"):
-            gen_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
-
         models = [m for m in dict.fromkeys([settings.PRIMARY_MODEL, settings.FALLBACK_MODEL]) if m]
         for model in models:
             try:
@@ -85,7 +77,10 @@ User Query:
                     lambda m=model: self.client.aio.models.generate_content_stream(
                         model=m,
                         contents=user_prompt,
-                        config=types.GenerateContentConfig(**gen_config_kwargs),
+                        config=types.GenerateContentConfig(
+                            system_instruction=system_prompt,
+                            temperature=0.2,
+                        ),
                     )
                 )
                 buffer = ""
