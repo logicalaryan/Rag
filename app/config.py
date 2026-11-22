@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     DOCUMENTS_DIR: str = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "data", "documents")
 
     # Security & CORS
+    API_ACCESS_TOKEN: str = ""
+    CORS_Origin_REGEX: str = r"https://([a-z0-9-]+\.)?raggg-2hw\.pages\.dev"
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://127.0.0.1:3000",
