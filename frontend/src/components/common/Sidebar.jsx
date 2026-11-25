@@ -29,7 +29,6 @@ export function Sidebar({ open, onClose }) {
             <div className="brand-logo">RAG</div>
             <div className="brand-title">Enterprise</div>
           </div>
-          <span className="brand-badge">v5.0</span>
         </div>
 
         <div className="sidebar-top">
@@ -91,9 +90,8 @@ export function Sidebar({ open, onClose }) {
         <div className="sidebar-footer">
           <div className="system-status">
             <div className={`status-dot ${systemOnline ? '' : 'offline'}`}></div>
-            <span>{systemOnline ? 'Cluster Active' : 'Connecting'}</span>
+            <span>{systemOnline ? 'Online' : 'Offline'}</span>
           </div>
-          <span>Decoupled API</span>
         </div>
       </aside>
     </>

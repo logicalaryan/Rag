@@ -16,13 +16,11 @@ export function Header({ onMenu }) {
           </svg>
         </button>
         <h2 className="header-title">{title}</h2>
-        <span className="header-subtitle">/ agentic-v5</span>
       </div>
       <div className="header-badges">
-        <div className="badge badge-secondary">Router · Hybrid + Web · Critic</div>
         <div className="badge">
           <span className={`status-dot ${systemOnline ? '' : 'offline'}`}></span>
-          {systemOnline ? 'API Connected' : 'Offline'}
+          {systemOnline ? 'Connected' : 'Offline'}
         </div>
       </div>
     </header>

@@ -17,10 +17,9 @@ export function MessageList({ messages }) {
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
           </div>
-          <h3>Agentic RAG Assistant</h3>
+          <h3>RAG Assistant</h3>
           <p>
-            Ask questions grounded against your uploaded documents or web sources.
-            Responses are verified for hallucinations by our Critic agent.
+            Ask questions about your uploaded documents or web topics.
           </p>
         </div>
       </div>

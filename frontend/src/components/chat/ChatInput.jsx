@@ -55,9 +55,6 @@ export function ChatInput() {
           </svg>
         </button>
       </div>
-      <div className="input-hint">
-        Markdown supported &bull; Hybrid Dense + BM25 &bull; Critic Guardrails active
-      </div>
     </div>
   );
 }
