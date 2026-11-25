@@ -65,6 +65,11 @@ production/
 
 ## Quick Start (Docker)
 
-```bash
-docker-compose up --build
-```
+```bashflowchart LR
+    A[Document upload<br/>documents.py] --> B[Ingestion trigger]
+    B --> C[Background worker<br/>ingestion_worker.py]
+    C --> D[Parse document<br/>indexing/parsers.py]
+    D --> E[Split into chunks<br/>indexing/chunkers.py]
+    E --> F[Create embeddings<br/>indexing/embeddings.py]
+    F --> G[Store vectors<br/>db/vector_store.py]
+    C -. metadata / persistence .-> H[(PostgreSQL<br/>db/postgres.py, models.py)]
