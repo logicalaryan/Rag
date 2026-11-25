@@ -1,8 +1,9 @@
 import os
 import shutil
+import hmac
 from datetime import datetime
 from typing import List, Optional
-from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Query, HTTPException, Header
 from app.config import settings
 from app.db.models import DocumentMetadata, DocumentUploadResponse
 from app.db.vector_store import vector_store
@@ -81,3 +82,19 @@ def upload_document(file: UploadFile = File(...), tenant_id: str = Form(default=
     except Exception as e:
         safe_err = privacy_guard.sanitize_for_log(str(e))
         raise HTTPException(status_code=500, detail=f"Ingestion failed: {safe_err}")
+
+
+@router.delete("/{filename}")
+def delete_document(filename: str, x_admin_pin: str = Header(default="")):
+    """Deletes a document from the local store and vector DB after validating admin pin."""
+    expected_pin = settings.ADMIN_DELETE_PIN
+    if not expected_pin or not hmac.compare_digest(x_admin_pin, expected_pin):
+        raise HTTPException(status_code=403, detail="Invalid admin PIN. Unauthorized to delete.")
+
+    file_path = os.path.join(settings.DOCUMENTS_DIR, os.path.basename(filename))
+    if os.path.exists(file_path):
+        os.remove(file_path)
+
+    vector_store.delete_by_source(filename)
+    local_retriever.invalidate_cache()
+    return {"status": "deleted", "filename": filename}

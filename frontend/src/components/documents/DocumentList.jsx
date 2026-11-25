@@ -2,7 +2,7 @@ import React from 'react';
 import { useDocuments } from '../../hooks/useDocuments';
 
 export function DocumentList() {
-  const { documents } = useDocuments();
+  const { documents, handleDelete } = useDocuments();
 
   if (!documents || documents.length === 0) {
     return <div className="doc-empty">No documents indexed yet. Upload a document above.</div>;
@@ -19,11 +19,27 @@ export function DocumentList() {
             </svg>
             <span className="doc-name">{doc.filename}</span>
           </div>
-          <div className="doc-meta">
+          <div className="doc-meta" style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <span className="doc-size">{doc.size || 'Auto'}</span>
             <span className={`doc-status ${doc.status === 'ready' || doc.status === 'indexed' ? 'ready' : 'indexing'}`}>
               {doc.status || 'ready'}
             </span>
+            <button
+              onClick={() => handleDelete(doc.filename)}
+              title="Delete document (requires Admin PIN)"
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#ef4444',
+                cursor: 'pointer',
+                padding: '2px 4px',
+                fontSize: '14px',
+                display: 'flex',
+                alignItems: 'center',
+              }}
+            >
+              🗑️
+            </button>
           </div>
         </div>
       ))}

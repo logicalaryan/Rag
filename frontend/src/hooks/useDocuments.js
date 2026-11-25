@@ -1,9 +1,9 @@
 import { useState } from 'react';
 import { useChatContext } from '../context/ChatContext';
-import { uploadDocument } from '../services/api';
+import { uploadDocument, deleteDocument } from '../services/api';
 
 export function useDocuments() {
-  const { documents, addDocument } = useChatContext();
+  const { documents, addDocument, removeDocument } = useChatContext();
   const [isUploading, setIsUploading] = useState(false);
   const [uploadError, setUploadError] = useState(null);
 
@@ -27,10 +27,23 @@ export function useDocuments() {
     }
   }
 
+  async function handleDelete(filename) {
+    const pin = window.prompt(`Enter Admin PIN to delete "${filename}":`);
+    if (!pin) return;
+
+    try {
+      await deleteDocument(filename, pin);
+      removeDocument(filename);
+    } catch (err) {
+      alert(`Deletion failed: ${err.message}`);
+    }
+  }
+
   return {
     documents,
     isUploading,
     uploadError,
     handleUpload,
+    handleDelete,
   };
 }

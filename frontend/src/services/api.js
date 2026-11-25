@@ -35,3 +35,17 @@ export async function fetchDocuments() {
     return [];
   }
 }
+
+export async function deleteDocument(filename, adminPin) {
+  const res = await fetch(`${API_BASE}/api/v1/documents/${encodeURIComponent(filename)}`, {
+    method: 'DELETE',
+    headers: {
+      'X-Admin-Pin': adminPin,
+    },
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Failed to delete document');
+  }
+  return await res.json();
+}

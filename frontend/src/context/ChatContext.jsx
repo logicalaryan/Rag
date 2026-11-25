@@ -200,6 +200,10 @@ export function ChatProvider({ children }) {
     setDocuments((prev) => [doc, ...prev]);
   }
 
+  function removeDocument(filename) {
+    setDocuments((prev) => prev.filter((d) => d.filename !== filename && d.id !== filename));
+  }
+
   return (
     <ChatContext.Provider
       value={{
@@ -215,6 +219,7 @@ export function ChatProvider({ children }) {
         selectSession,
         sendMessage,
         addDocument,
+        removeDocument,
       }}
     >
       {children}

@@ -39,6 +39,7 @@ class Settings(BaseSettings):
 
     # Security & CORS
     API_ACCESS_TOKEN: str = ""
+    ADMIN_DELETE_PIN: str = "Aryan!234!."
     CORS_Origin_REGEX: str = r"https://([a-z0-9-]+\.)?raggg-2hw\.pages\.dev"
     CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
