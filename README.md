@@ -1,75 +1,32 @@
-# Production Agentic RAG System
-
-Enterprise microservice architecture for autonomous Retrieval-Augmented Generation.
-
-## Architecture Structure
-
-```
 production/
 ├── app/
-│   ├── main.py                     # FastAPI entrypoint & lifespan
-│   ├── config.py                   # Pydantic BaseSettings
-│   │
-│   ├── api/                        # REST & SSE API Gateway
-│   │   ├── v1/
-│   │   │   ├── endpoints/
-│   │   │   │   ├── chat.py         # SSE streaming chat endpoint
-│   │   │   │   ├── documents.py    # Document upload & ingestion triggers
-│   │   │   │   └── health.py       # Liveness / readiness probes
-│   │   │   └── routers.py          # API v1 aggregator
-│   │   └── middlewares/
-│   │       ├── auth.py             # JWT / API Key security
-│   │       ├── rate_limiter.py     # Redis token bucket
-│   │       └── guardrails.py       # Prompt injection & PII filtering
-│   │
-│   ├── core/                       # Multi-Agent Engine
+│   ├── main.py                     # FastAPI entrypoint, lifespan, CORS, and SSE streaming
+│   ├── config.py                   # Pydantic BaseSettings (centralized configuration)
+│   ├── api/v1/                     # REST & SSE API Gateway
+│   │   ├── endpoints/
+│   │   │   ├── chat.py             # Server-Sent Events (SSE) chat stream
+│   │   │   ├── documents.py        # File upload, deletion (Admin-gated), and index sync
+│   │   │   └── health.py           # Container readiness & liveness probes
+│   │   └── routers.py              # Aggregated routing & API key dependency
+│   ├── core/                       # Multi-Agent RAG Engine
 │   │   ├── agents/
-│   │   │   ├── router.py           # Intent router & query rewriter
-│   │   │   ├── synthesizer.py      # Response synthesis with citations
-│   │   │   ├── critic.py           # Self-reflection groundedness checker
-│   │   │   └── orchestrator.py     # Async pipeline state machine
+│   │   │   ├── router.py           # Intent classification & query reformulation
+│   │   │   ├── synthesizer.py      # Grounded response synthesis with strict citation tracking
+│   │   │   ├── critic.py           # Self-reflective factuality & hallucination evaluator
+│   │   │   └── orchestrator.py     # Async pipeline state machine & concurrent dispatcher
 │   │   ├── tools/
-│   │   │   ├── base.py             # Abstract tool interface
-│   │   │   ├── local_retriever.py  # Hybrid Dense + BM25 + FlashRank
-│   │   │   └── web_search.py       # Async DuckDuckGo search & scraping
+│   │   │   ├── local_retriever.py  # Hybrid Dense (ChromaDB) + Sparse (BM25) + FlashRank
+│   │   │   └── web_search.py       # Live Gemini Google Search Grounding with privacy redaction
 │   │   ├── indexing/
-│   │   │   ├── parsers.py          # Multi-format extractors (PDF/TXT/MD)
-│   │   │   ├── chunkers.py         # Structure-aware recursive chunker
-│   │   │   └── embeddings.py       # Batch embedding client with backoff
-│   │   └── memory/
-│   │       ├── session_store.py    # PostgreSQL multi-turn chat persistence
-│   │       └── semantic_cache.py   # Redis semantic vector cache
-│   │
-│   ├── db/                         # Persistence & Database Adapters
-│   │   ├── postgres.py             # SQLAlchemy async engine
-│   │   ├── vector_store.py         # Qdrant / ChromaDB Server adapter
-│   │   └── models.py               # ORM & Pydantic schemas
-│   │
-│   ├── workers/                    # Background Workers
-│   │   └── ingestion_worker.py     # Async Celery/Redis document ingestion
-│   │
-│   └── telemetry/                  # Observability
-│       ├── tracing.py              # OpenTelemetry / Langfuse instrumentation
-│       └── metrics.py              # Prometheus latency & token metrics
-│
-├── tests/                          # Automated Tests
-│   ├── test_agents.py
-│   ├── test_retriever.py
-│   └── test_api.py
-│
+│   │   │   └── chunkers.py         # Structure-aware document parser and semantic chunking
+│   │   ├── llm_gateway.py          # RPM throttle, single-flight deduplication & in-memory cache
+│   │   └── privacy.py              # PII, secret redaction, and log sanitization
+│   └── db/                         # Persistence Layer
+│       ├── models.py               # Pydantic schemas and metadata contracts
+│       ├── postgres.py             # Neon Postgres async connection pool for turn history
+│       └── vector_store.py         # Dense vector collection interface (ChromaDB/pgvector)
+├── frontend/                       # Vite + React Real-Time Client
+│   └── src/                        # SSE reader, dynamic citation badges, document manager
 ├── Dockerfile                      # Production container image
-├── docker-compose.yml              # Local multi-service cluster
-├── requirements.txt                # Production dependencies
-└── README.md
-```
-
-## Quick Start (Docker)
-
-```bashflowchart LR
-    A[Document upload<br/>documents.py] --> B[Ingestion trigger]
-    B --> C[Background worker<br/>ingestion_worker.py]
-    C --> D[Parse document<br/>indexing/parsers.py]
-    D --> E[Split into chunks<br/>indexing/chunkers.py]
-    E --> F[Create embeddings<br/>indexing/embeddings.py]
-    F --> G[Store vectors<br/>db/vector_store.py]
-    C -. metadata / persistence .-> H[(PostgreSQL<br/>db/postgres.py, models.py)]
+├── docker-compose.yml              # Local orchestration cluster
+└── requirements.txt                # Minimized production dependencies
